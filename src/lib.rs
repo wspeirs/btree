@@ -1,6 +1,9 @@
+use std::error::Error;
 use std::fs::File;
+use std::io::Read;
 use std::fs::OpenOptions;
-use std::mem::size_of;
+use std::mem::{size_of, transmute};
+use std::cmp::max;
 
 const NUM_CHILDREN: usize = 32;
 
@@ -18,21 +21,24 @@ struct Node<K: Ord, V> {
 pub struct BTree<K: Ord, V> {
     fd: File, // the file backing the whole thing
     first: u64, // first node in the linked-list of values
-    root: Box<Node<K,V>>(),
+    root: Node<K,V>,
 }
 
 impl <K: Ord, V> BTree<K, V> {
-    pub fn new(keySize, valueSize) -> BTree<K,V> {
+    pub fn new(keySize: usize, valueSize: usize) -> Result<BTree<K,V>, Box<Error>> {
         let file = try!(OpenOptions::new()
                                   .read(true)
                                   .write(true)
                                   .create(true)
                                   .open("btree.dat"));
 
-        let mut buff: [u8; keySize];
-        file.read_exact(buff);
+        let totalSize = keySize + size_of::<u64>() + max(valueSize, (keySize+size_of::<u64>()) * NUM_CHILDREN);
+        let mut buff = Vec::with_capacity(totalSize);
+        file.read_exact(&mut buff);
 
-        BTree{ fd: file, first: 0 };
+        let root_node: Node<K,V> = unsafe { transmute(buff) };
+
+        BTree{ fd: file, first: 0, root: root_node };
     }
 }
 
