@@ -7,10 +7,11 @@ use rustc_serialize::{Encodable, Decodable};
 
 use std::error::Error;
 use std::fs::File;
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{Read, Seek, SeekFrom, ErrorKind};
 use std::fs::OpenOptions;
 use std::mem::{size_of};
 use std::cmp::max;
+use std::convert::From;
 
 const NUM_CHILDREN: usize = 32;
 
@@ -68,8 +69,8 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
         try!(file.read_exact(&mut version_string));
 
         if version_string[0] != 0x2b {
-            Err("Invalid BTree File")
-        }
+            return Err(From::from(std::io::Error::new(ErrorKind::InvalidData, "Invalid BTree file version")));
+        } 
 
         // total size of a Node
         let total_size = key_size + size_of::<u64>() + max(value_size, (key_size+size_of::<u64>()) * NUM_CHILDREN);
