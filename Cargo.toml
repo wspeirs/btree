@@ -4,3 +4,5 @@ version = "0.1.0"
 authors = ["William Speirs <bill.speirs@gmail.com>"]
 
 [dependencies]
+bincode = "0.6.0"
+rustc-serialize = "0.3.19"
