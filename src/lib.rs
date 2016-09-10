@@ -85,21 +85,27 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
             Ok(BTree{fd: file, key_size: key_size, value_size: value_size, root: None})
         } else {
             // make sure we've opened a proper file
-            let mut version_string = [0; 8];
+            let mut version_string = vec![0; 8];
 
             try!(file.read_exact(&mut version_string));
 
             if try!(str::from_utf8(&version_string[0..FILE_HEADER.len()])) != FILE_HEADER ||
                version_string[FILE_HEADER.len()] != CURRENT_VERSION {
                 return Err(From::from(std::io::Error::new(ErrorKind::InvalidData, "Invalid BTree file version")));
-            } 
+            }
 
             // total size of a Node
-            let total_size = key_size + size_of::<u64>() + max(value_size, (key_size+size_of::<u64>()) * NUM_CHILDREN);
-            let mut buff = Vec::with_capacity(total_size);
+            let total_size: usize = (key_size + size_of::<u64>() + max(value_size, (key_size+size_of::<u64>()) * NUM_CHILDREN)) as usize;
+            let mut buff = vec![0; total_size];
+
+            // make sure we have a root node to read
+            if metadata.len() < (version_string.len() + total_size) as u64 {
+                // if we don't have a root node yet, just return
+                return Ok(BTree{fd: file, key_size: key_size, value_size: value_size, root: None});
+            }
             
             // seek total_size in from the end of the file to read the root node
-            try!(file.seek(SeekFrom::End(total_size as i64)));
+            try!(file.seek(SeekFrom::End((total_size as isize * -1) as i64)));
             try!(file.read_exact(&mut buff));
 
             let root_node: Node<K,V> = try!(decode(&buff[..]));
