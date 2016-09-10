@@ -22,8 +22,12 @@ const CURRENT_VERSION: u8 = 0x01;
 pub trait KeyType: Ord + Encodable + Decodable {}
 pub trait ValueType: Encodable + Decodable {}
 
+// provide generic implementations
+impl<T> KeyType for T where T: Ord + Encodable + Decodable {}
+impl<T> ValueType for T where T: Encodable + Decodable {}
+
 #[derive(RustcEncodable, RustcDecodable, PartialEq)]
-enum Payload<K: Ord, V: ValueType> {
+enum Payload<K: KeyType, V: ValueType> {
         Value(V),
         Children([(K,u64); NUM_CHILDREN]),
     }
@@ -109,12 +113,11 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
 mod tests {
     use std::fs;
     use ::BTree;
-    use rustc_serialize::{Encodable, Decodable};
 
     #[test]
     fn new_blank_file() {
         // make sure we remove any old files
-        fs::remove_file("/tmp/btree_test.btr").unwrap();
+        fs::remove_file("/tmp/btree_test.btr");
 
         BTree::<u8, u8>::new("/tmp/btree_test.btr", 1, 1).unwrap();
     }
