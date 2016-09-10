@@ -74,6 +74,8 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
         // check to see if this is a new file
         let metadata = try!(file.metadata());
 
+        println!("FILE HAS LENGTH: {}", metadata.len());
+
         if metadata.len() == 0 {
             // write out our header
             try!(file.write(FILE_HEADER.as_bytes()));
@@ -83,7 +85,7 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
             Ok(BTree{fd: file, key_size: key_size, value_size: value_size, root: None})
         } else {
             // make sure we've opened a proper file
-            let mut version_string = Vec::with_capacity(8);
+            let mut version_string = [0; 8];
 
             try!(file.read_exact(&mut version_string));
 
@@ -114,11 +116,19 @@ mod tests {
     use std::fs;
     use ::BTree;
 
+
     #[test]
     fn new_blank_file() {
         // make sure we remove any old files
         fs::remove_file("/tmp/btree_test.btr");
 
         BTree::<u8, u8>::new("/tmp/btree_test.btr", 1, 1).unwrap();
+    }
+
+    #[test]
+    fn new_existing_file() {
+        new_blank_file();  // assume this works
+
+        let btree = BTree::<u8, u8>::new("/tmp/btree_test.btr", 1, 1).unwrap();
     }
 }
