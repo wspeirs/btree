@@ -60,12 +60,12 @@ pub struct BTree<K: KeyType, V: ValueType> {
 }
 
 impl <K: KeyType, V: ValueType> BTree<K, V> {
-    pub fn new(key_size: usize, value_size: usize) -> Result<BTree<K,V>, Box<Error>> {
+    pub fn new(file_path: &str, key_size: usize, value_size: usize) -> Result<BTree<K,V>, Box<Error>> {
         let mut file = try!(OpenOptions::new()
                                   .read(true)
                                   .write(true)
                                   .create(true)
-                                  .open("btree.dat"));
+                                  .open(file_path));
 
         // check to see if this is a new file
         let metadata = try!(file.metadata());
@@ -107,8 +107,15 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+    use ::BTree;
+    use rustc_serialize::{Encodable, Decodable};
+
     #[test]
-    fn it_works() {
-        println!("It works!!!")
+    fn new_blank_file() {
+        // make sure we remove any old files
+        fs::remove_file("/tmp/btree_test.btr").unwrap();
+
+        BTree::<u8, u8>::new("/tmp/btree_test.btr", 1, 1).unwrap();
     }
 }
