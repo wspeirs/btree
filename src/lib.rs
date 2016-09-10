@@ -5,15 +5,18 @@ use bincode::SizeLimit;
 use bincode::rustc_serialize::{encode, decode};
 use rustc_serialize::{Encodable, Decodable};
 
-use std::error::Error;
-use std::fs::File;
-use std::io::{Read, Seek, SeekFrom, ErrorKind};
-use std::fs::OpenOptions;
-use std::mem::{size_of};
 use std::cmp::max;
 use std::convert::From;
+use std::error::Error;
+use std::fs::File;
+use std::fs::OpenOptions;
+use std::io::{Read, Write, Seek, SeekFrom, ErrorKind};
+use std::mem::{size_of};
+use std::str;
 
 const NUM_CHILDREN: usize = 32;
+const FILE_HEADER: &'static str = "B+Tree\0";
+const CURRENT_VERSION: u8 = 0x01;
 
 // specify the types for the keys & values
 pub trait KeyType: Ord + Encodable + Decodable {}
@@ -36,7 +39,8 @@ struct Node<K: KeyType, V: ValueType> {
 /// level in the tree. The on-disk format is as follows where VV is the version
 /// number:
 /// |-------------------------------------------|
-/// | 0x2b 0x42 0x72 0x54 | 0x65 0x65 0x00 0xVV |
+/// | 0x42 0x2b 0x54 0x72 | 0x65 0x65 0x00 0xVV |
+/// | B    +    T    r    | e    e    \0   0xVV |
 /// |-------------------------------------------|
 /// | smallest record in bincode format         |
 /// |-------------------------------------------|
@@ -49,10 +53,10 @@ struct Node<K: KeyType, V: ValueType> {
 /// | root node                                 |
 /// |-------------------------------------------|
 pub struct BTree<K: KeyType, V: ValueType> {
-    fd: File,           // the file backing the whole thing
-    root: Node<K,V>,    // in-memory copy of the root node
-    key_size: usize,    // the size of the key in bytes
-    value_size: usize,  // the size of the value in bytes
+    fd: File,                // the file backing the whole thing
+    root: Option<Node<K,V>>, // optional in-memory copy of the root node
+    key_size: usize,         // the size of the key in bytes
+    value_size: usize,       // the size of the value in bytes
 }
 
 impl <K: KeyType, V: ValueType> BTree<K, V> {
@@ -63,26 +67,39 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
                                   .create(true)
                                   .open("btree.dat"));
 
-        // make sure we've opened a proper file
-        let mut version_string = Vec::with_capacity(8);
+        // check to see if this is a new file
+        let metadata = try!(file.metadata());
 
-        try!(file.read_exact(&mut version_string));
+        if metadata.len() == 0 {
+            // write out our header
+            try!(file.write(FILE_HEADER.as_bytes()));
+            // write out our version
+            try!(file.write(&[CURRENT_VERSION]));
 
-        if version_string[0] != 0x2b {
-            return Err(From::from(std::io::Error::new(ErrorKind::InvalidData, "Invalid BTree file version")));
-        } 
+            Ok(BTree{fd: file, key_size: key_size, value_size: value_size, root: None})
+        } else {
+            // make sure we've opened a proper file
+            let mut version_string = Vec::with_capacity(8);
 
-        // total size of a Node
-        let total_size = key_size + size_of::<u64>() + max(value_size, (key_size+size_of::<u64>()) * NUM_CHILDREN);
-        let mut buff = Vec::with_capacity(total_size);
-        
-        // seek total_size in from the end of the file to read the root node
-        try!(file.seek(SeekFrom::End(total_size as i64)));
-        try!(file.read_exact(&mut buff));
+            try!(file.read_exact(&mut version_string));
 
-        let root_node: Node<K,V> = decode(&buff[..]).unwrap();
+            if try!(str::from_utf8(&version_string[0..FILE_HEADER.len()])) != FILE_HEADER ||
+               version_string[FILE_HEADER.len()] != CURRENT_VERSION {
+                return Err(From::from(std::io::Error::new(ErrorKind::InvalidData, "Invalid BTree file version")));
+            } 
 
-        Ok(BTree{ fd: file, key_size: key_size, value_size: value_size, root: root_node })
+            // total size of a Node
+            let total_size = key_size + size_of::<u64>() + max(value_size, (key_size+size_of::<u64>()) * NUM_CHILDREN);
+            let mut buff = Vec::with_capacity(total_size);
+            
+            // seek total_size in from the end of the file to read the root node
+            try!(file.seek(SeekFrom::End(total_size as i64)));
+            try!(file.read_exact(&mut buff));
+
+            let root_node: Node<K,V> = try!(decode(&buff[..]));
+
+            Ok(BTree{fd: file, key_size: key_size, value_size: value_size, root: Some(root_node)})
+        }
     }
 }
 
