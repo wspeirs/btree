@@ -7,6 +7,7 @@ use rustc_serialize::{Encodable, Decodable};
 
 use std::cmp::max;
 use std::convert::From;
+use std::collections::BTreeMap;
 use std::error::Error;
 use std::fs::File;
 use std::fs::OpenOptions;
@@ -39,6 +40,12 @@ struct Node<K: KeyType, V: ValueType> {
     payload: Payload<K,V>, // either children, or actual values
 }
 
+#[derive(RustcEncodable, RustcDecodable, PartialEq)]
+struct WALRecord<K: KeyType, V: ValueType> {
+    key: K,
+    value: V,
+}
+
 /// This struct represents an on-disk B+Tree. There are NUM_CHILDREN keys at each
 /// level in the tree. The on-disk format is as follows where VV is the version
 /// number:
@@ -57,60 +64,106 @@ struct Node<K: KeyType, V: ValueType> {
 /// | root node                                 |
 /// |-------------------------------------------|
 pub struct BTree<K: KeyType, V: ValueType> {
-    fd: File,                // the file backing the whole thing
-    root: Option<Node<K,V>>, // optional in-memory copy of the root node
-    key_size: usize,         // the size of the key in bytes
-    value_size: usize,       // the size of the value in bytes
+    tree_file: File,          // the file backing the whole thing
+    wal_file: File,           // write-ahead log for in-memory items
+    root: Option<Node<K,V>>,  // optional in-memory copy of the root node
+    max_key_size: usize,      // the size of the key in bytes
+    max_value_size: usize,    // the size of the value in bytes
+    mem_tree: BTreeMap<K, V>,
 }
 
 impl <K: KeyType, V: ValueType> BTree<K, V> {
-    pub fn new(file_path: &str, key_size: usize, value_size: usize) -> Result<BTree<K,V>, Box<Error>> {
-        let mut file = try!(OpenOptions::new()
-                                  .read(true)
-                                  .write(true)
-                                  .create(true)
-                                  .open(file_path));
+    pub fn new(tree_file_path: &str, max_key_size: usize, max_value_size: usize) -> Result<BTree<K,V>, Box<Error>> {
+        // create our mem_tree
+        let mut mem_tree = BTreeMap::new();
 
-        // check to see if this is a new file
-        let metadata = try!(file.metadata());
+        let mut wal_file = try!(OpenOptions::new().read(true).write(true).create(true).open(tree_file_path.to_owned() + ".wal"));
+
+        let record_size = max_key_size + max_value_size;
+
+        // if we have a WAL file, replay it into the mem_tree
+        if try!(wal_file.metadata()).len() != 0 {
+            let mut buff = vec![0; record_size];
+
+            while true {
+                match wal_file.read_exact(&mut buff) {
+                    Ok(_) => {
+                        let record: WALRecord<K,V> = try!(decode(&buff));  // decode the record
+                        mem_tree.insert(record.key,record.value);  // add it to the in-memory table
+                    },
+                    Err(e) => if e.kind() == ErrorKind::UnexpectedEof {
+                        break  // reached the end of our file, break from the loop
+                    } else {
+                        return Err(From::from(e));
+                    }
+                }
+            }
+        }
+
+        // compute the size of a on-disk Node
+        let node_size: usize = (max_key_size + size_of::<u64>() + max(max_value_size, (max_key_size + size_of::<u64>()) * NUM_CHILDREN)) as usize;
+
+        // open the data file
+        let mut tree_file = try!(OpenOptions::new().read(true).write(true).create(true).open(tree_file_path));
+
+        let metadata = try!(tree_file.metadata());
 
         println!("FILE HAS LENGTH: {}", metadata.len());
 
+        // check to see if this is a new file
         if metadata.len() == 0 {
             // write out our header
-            try!(file.write(FILE_HEADER.as_bytes()));
+            try!(tree_file.write(FILE_HEADER.as_bytes()));
+            
             // write out our version
-            try!(file.write(&[CURRENT_VERSION]));
+            try!(tree_file.write(&[CURRENT_VERSION]));
 
-            Ok(BTree{fd: file, key_size: key_size, value_size: value_size, root: None})
+            // construct and return our BTree object
+            Ok(BTree{tree_file: tree_file,
+                     wal_file: wal_file,
+                     root: None,
+                     max_key_size: max_key_size,
+                     max_value_size: max_value_size,
+                     mem_tree: mem_tree
+            })
         } else {
-            // make sure we've opened a proper file
             let mut version_string = vec![0; 8];
 
-            try!(file.read_exact(&mut version_string));
+            try!(tree_file.read_exact(&mut version_string));
 
+            // make sure we've opened a proper file
             if try!(str::from_utf8(&version_string[0..FILE_HEADER.len()])) != FILE_HEADER ||
                version_string[FILE_HEADER.len()] != CURRENT_VERSION {
-                return Err(From::from(std::io::Error::new(ErrorKind::InvalidData, "Invalid BTree file version")));
+                return Err(From::from(std::io::Error::new(ErrorKind::InvalidData, "Invalid BTree file or BTree version")));
             }
 
-            // total size of a Node
-            let total_size: usize = (key_size + size_of::<u64>() + max(value_size, (key_size+size_of::<u64>()) * NUM_CHILDREN)) as usize;
-            let mut buff = vec![0; total_size];
+            let mut buff = vec![0; node_size];
 
             // make sure we have a root node to read
-            if metadata.len() < (version_string.len() + total_size) as u64 {
+            if metadata.len() < (version_string.len() + node_size) as u64 {
                 // if we don't have a root node yet, just return
-                return Ok(BTree{fd: file, key_size: key_size, value_size: value_size, root: None});
+                return Ok(BTree{tree_file: tree_file,
+                                wal_file: wal_file,
+                                root: None,
+                                max_key_size: max_key_size,
+                                max_value_size: max_value_size,
+                                mem_tree: mem_tree
+                });
             }
             
-            // seek total_size in from the end of the file to read the root node
-            try!(file.seek(SeekFrom::End((total_size as isize * -1) as i64)));
-            try!(file.read_exact(&mut buff));
+            // seek node_size in from the end of the file to read the root node
+            try!(tree_file.seek(SeekFrom::End((node_size as isize * -1) as i64)));
+            try!(tree_file.read_exact(&mut buff));
 
             let root_node: Node<K,V> = try!(decode(&buff[..]));
 
-            Ok(BTree{fd: file, key_size: key_size, value_size: value_size, root: Some(root_node)})
+            Ok(BTree{tree_file: tree_file,
+                     wal_file: wal_file,
+                     root: Some(root_node),
+                     max_key_size: max_key_size,
+                     max_value_size: max_value_size,
+                     mem_tree: mem_tree
+            })
         }
     }
 }
