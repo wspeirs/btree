@@ -73,7 +73,7 @@ pub struct BTree<K: KeyType, V: ValueType> {
 }
 
 impl <K: KeyType, V: ValueType> BTree<K, V> {
-    pub fn new(tree_file_path: &str, max_key_size: usize, max_value_size: usize) -> Result<BTree<K,V>, Box<Error>> {
+    pub fn new(tree_file_path: String, max_key_size: usize, max_value_size: usize) -> Result<BTree<K,V>, Box<Error>> {
         // create our mem_tree
         let mut mem_tree = BTreeMap::new();
 
@@ -173,21 +173,35 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
 #[cfg(test)]
 mod tests {
     use std::fs;
+    use std::fs::OpenOptions;
     use ::BTree;
 
+    const FILE_PATH: &'static str = "/tmp/btree_test.btr";
 
     #[test]
     fn new_blank_file() {
         // make sure we remove any old files
-        fs::remove_file("/tmp/btree_test.btr");
+        fs::remove_file(FILE_PATH);
+        fs::remove_file(FILE_PATH.to_owned() + ".wal");
 
-        BTree::<u8, u8>::new("/tmp/btree_test.btr", 1, 1).unwrap();
+        BTree::<u8, u8>::new(FILE_PATH.to_owned(), 1, 1).unwrap();
+
+        // make sure our two files were created
+        let btf = OpenOptions::new().read(true).write(false).create(false).open(FILE_PATH).unwrap();
+        assert!(btf.metadata().unwrap().len() == 8);
+
+        let wal = OpenOptions::new().read(true).write(false).create(false).open(FILE_PATH.to_owned() + ".wal").unwrap();
+        assert!(wal.metadata().unwrap().len() == 0);
     }
 
     #[test]
     fn new_existing_file() {
         new_blank_file();  // assume this works
 
-        let btree = BTree::<u8, u8>::new("/tmp/btree_test.btr", 1, 1).unwrap();
+        let btree = BTree::<u8, u8>::new(FILE_PATH.to_owned(), 1, 1).unwrap();
+
+        // check our file lengths from the struct
+        assert!(btree.tree_file.metadata().unwrap().len() == 8);
+        assert!(btree.wal_file.metadata().unwrap().len() == 0);
     }
 }
