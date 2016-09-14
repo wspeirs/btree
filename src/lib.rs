@@ -175,6 +175,8 @@ impl <'a, K: KeyType, V: ValueType> BTree<K, V> {
 
         try!(self.wal_file.write_all(&buff));
 
+        let WALRecord{key, value} = record;
+
         self.mem_tree.insert(key, value);
 
         Ok( () )
