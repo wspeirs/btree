@@ -1,5 +1,6 @@
 extern crate bincode;
 extern crate rustc_serialize;
+extern crate rand;
 
 use bincode::SizeLimit;
 use bincode::rustc_serialize::{encode, decode};
@@ -64,18 +65,18 @@ struct WALRecord<K: KeyType, V: ValueType> {
 /// | root node                                 |
 /// |-------------------------------------------|
 pub struct BTree<K: KeyType, V: ValueType> {
-    tree_file: File,          // the file backing the whole thing
-    wal_file: File,      // write-ahead log for in-memory items
-    root: Option<Node<K,V>>,  // optional in-memory copy of the root node
-    max_key_size: usize,      // the size of the key in bytes
-    max_value_size: usize,    // the size of the value in bytes
-    mem_tree: BTreeMap<K, V>,
+    tree_file: File,                // the file backing the whole thing
+    wal_file: File,                 // write-ahead log for in-memory items
+    root: Option<Node<K,V>>,        // optional in-memory copy of the root node
+    max_key_size: usize,            // the size of the key in bytes
+    max_value_size: usize,          // the size of the value in bytes
+    mem_tree: BTreeMap<K, Vec<V>>,  // the in-memory BTree that gets merged with the on-disk one
 }
 
 impl <K: KeyType, V: ValueType> BTree<K, V> {
     pub fn new(tree_file_path: String, max_key_size: usize, max_value_size: usize) -> Result<BTree<K,V>, Box<Error>> {
         // create our mem_tree
-        let mut mem_tree = BTreeMap::new();
+        let mut mem_tree = BTreeMap::<K, Vec<V>>::new();
 
         let mut wal_file = try!(OpenOptions::new().read(true).write(true).create(true).open(tree_file_path.to_owned() + ".wal"));
 
@@ -89,7 +90,7 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
                 match wal_file.read_exact(&mut buff) {
                     Ok(_) => {
                         let record: WALRecord<K,V> = try!(decode(&buff));  // decode the record
-                        mem_tree.insert(record.key,record.value);  // add it to the in-memory table
+                        mem_tree.entry(record.key).or_insert(vec![]).push(record.value);  // add it to the in-memory table
                     },
                     Err(e) => if e.kind() == ErrorKind::UnexpectedEof {
                         break  // reached the end of our file, break from the loop
@@ -167,10 +168,6 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
 
     /// Inserts a key into the BTree
     pub fn insert(&mut self, key: K, value: V) -> Result<usize, Box<Error>> {
-        if self.mem_tree.contains_key(&key) {
-            return Err(From::from(std::io::Error::new(ErrorKind::InvalidData, "Invalid BTree file or BTree version")));
-        }
-
         let record = WALRecord{key: key, value: value};
 
         let record_size = self.max_key_size + self.max_value_size;
@@ -182,7 +179,7 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
 
         let WALRecord{key, value} = record;
 
-        self.mem_tree.insert(key, value);
+        self.mem_tree.entry(key).or_insert(vec![]).push(value);
 
         Ok(buff.len())
     }
@@ -191,61 +188,82 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
 
 #[cfg(test)]
 mod tests {
+
     use std::fs;
     use std::fs::OpenOptions;
     use ::BTree;
+    use rand::{thread_rng, Rng};
 
-    const FILE_PATH: &'static str = "/tmp/btree_test.btr";
 
-    fn remove_files() {
-        fs::remove_file(FILE_PATH);
-        fs::remove_file(FILE_PATH.to_owned() + ".wal");
+    fn gen_temp_name() -> String {
+        let file_name: String = thread_rng().gen_ascii_chars().take(10).collect();
+
+        return "/tmp/".to_owned() + file_name.as_str() + ".btr";
+    }
+
+    fn remove_files(file_path: String) {
+        fs::remove_file(&file_path);
+        fs::remove_file(file_path + ".wal");
     }
 
     #[test]
     fn new_blank_file() {
-        remove_files(); // remove any old files
+        let file_path = gen_temp_name();
 
-        BTree::<u8, u8>::new(FILE_PATH.to_owned(), 1, 1).unwrap();
+        BTree::<u8, u8>::new(file_path.to_owned(), 1, 1).unwrap();
 
         // make sure our two files were created
-        let btf = OpenOptions::new().read(true).write(false).create(false).open(FILE_PATH).unwrap();
+        let btf = OpenOptions::new().read(true).write(false).create(false).open(&file_path).unwrap();
         assert!(btf.metadata().unwrap().len() == 8);
 
-        let wal = OpenOptions::new().read(true).write(false).create(false).open(FILE_PATH.to_owned() + ".wal").unwrap();
+        let wal = OpenOptions::new().read(true).write(false).create(false).open(file_path.to_owned() + ".wal").unwrap();
         assert!(wal.metadata().unwrap().len() == 0);
+
+        remove_files(file_path); // remove files assuming it all went well
     }
 
     #[test]
     fn new_existing_file() {
-        new_blank_file();  // assume this works
+        let file_path = gen_temp_name();
 
-        let btree = BTree::<u8, u8>::new(FILE_PATH.to_owned(), 1, 1).unwrap();
+        {
+            BTree::<u8, u8>::new(file_path.to_owned(), 1, 1).unwrap();
+        }
+
+        let btree = BTree::<u8, u8>::new(file_path.to_owned(), 1, 1).unwrap();
 
         // check our file lengths from the struct
         assert!(btree.tree_file.metadata().unwrap().len() == 8);
         assert!(btree.wal_file.metadata().unwrap().len() == 0);
+
+        remove_files(file_path); // remove files assuming it all went well
     }
 
     #[test]
     fn insert_new_u8() {
-        remove_files(); // remove any old files
+        let file_path = gen_temp_name();
 
-        let mut btree = BTree::<u8, u8>::new(FILE_PATH.to_owned(), 1, 1).unwrap();
+        let mut btree = BTree::<u8, u8>::new(file_path.to_owned(), 1, 1).unwrap();
 
-        btree.insert(2, 3).unwrap(); // insert into a new file
+        let len = btree.insert(2, 3).unwrap(); // insert into a new file
+
+        println!("LENGTH: {}", len);
 
         assert!(btree.wal_file.metadata().unwrap().len() == 2);
+
+        remove_files(file_path); // remove files assuming it all went well
     }
 
     #[test]
     fn insert_new_str() {
-        remove_files(); // remove any old files
+        let file_path = gen_temp_name();
 
-        let mut btree = BTree::<String, String>::new(FILE_PATH.to_owned(), 15, 15).unwrap();
+        let mut btree = BTree::<String, String>::new(file_path.to_owned(), 15, 15).unwrap();
 
         let size = btree.insert("Hello".to_owned(), "World".to_owned()).unwrap(); // insert into a new file
 
         assert!(btree.wal_file.metadata().unwrap().len() == size as u64);
+
+        remove_files(file_path); // remove files assuming it all went well
     }
 }
