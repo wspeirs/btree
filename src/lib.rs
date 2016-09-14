@@ -72,7 +72,7 @@ pub struct BTree<K: KeyType, V: ValueType> {
     mem_tree: BTreeMap<K, V>,
 }
 
-impl <'a, K: KeyType, V: ValueType> BTree<K, V> {
+impl <K: KeyType, V: ValueType> BTree<K, V> {
     pub fn new(tree_file_path: String, max_key_size: usize, max_value_size: usize) -> Result<BTree<K,V>, Box<Error>> {
         // create our mem_tree
         let mut mem_tree = BTreeMap::new();
@@ -107,8 +107,6 @@ impl <'a, K: KeyType, V: ValueType> BTree<K, V> {
         let mut tree_file = try!(OpenOptions::new().read(true).write(true).create(true).open(tree_file_path));
 
         let metadata = try!(tree_file.metadata());
-
-        println!("FILE HAS LENGTH: {}", metadata.len());
 
         // check to see if this is a new file
         if metadata.len() == 0 {
@@ -167,11 +165,18 @@ impl <'a, K: KeyType, V: ValueType> BTree<K, V> {
         }
     }
 
-    pub fn insert_wal(&mut self, key: K, value: V) -> Result<(), Box<Error>> {
+    /// Inserts a key into the BTree
+    pub fn insert(&mut self, key: K, value: V) -> Result<usize, Box<Error>> {
+        if self.mem_tree.contains_key(&key) {
+            return Err(From::from(std::io::Error::new(ErrorKind::InvalidData, "Invalid BTree file or BTree version")));
+        }
+
         let record = WALRecord{key: key, value: value};
 
         let record_size = self.max_key_size + self.max_value_size;
         let buff = try!(encode(&record, SizeLimit::Bounded(record_size as u64)));
+
+        println!("BUFF SIZE: {}", buff.len());
 
         try!(self.wal_file.write_all(&buff));
 
@@ -179,10 +184,9 @@ impl <'a, K: KeyType, V: ValueType> BTree<K, V> {
 
         self.mem_tree.insert(key, value);
 
-        Ok( () )
+        Ok(buff.len())
     }
 }
-
 
 
 #[cfg(test)]
@@ -193,11 +197,14 @@ mod tests {
 
     const FILE_PATH: &'static str = "/tmp/btree_test.btr";
 
-    #[test]
-    fn new_blank_file() {
-        // make sure we remove any old files
+    fn remove_files() {
         fs::remove_file(FILE_PATH);
         fs::remove_file(FILE_PATH.to_owned() + ".wal");
+    }
+
+    #[test]
+    fn new_blank_file() {
+        remove_files(); // remove any old files
 
         BTree::<u8, u8>::new(FILE_PATH.to_owned(), 1, 1).unwrap();
 
@@ -218,5 +225,27 @@ mod tests {
         // check our file lengths from the struct
         assert!(btree.tree_file.metadata().unwrap().len() == 8);
         assert!(btree.wal_file.metadata().unwrap().len() == 0);
+    }
+
+    #[test]
+    fn insert_new_u8() {
+        remove_files(); // remove any old files
+
+        let mut btree = BTree::<u8, u8>::new(FILE_PATH.to_owned(), 1, 1).unwrap();
+
+        btree.insert(2, 3).unwrap(); // insert into a new file
+
+        assert!(btree.wal_file.metadata().unwrap().len() == 2);
+    }
+
+    #[test]
+    fn insert_new_str() {
+        remove_files(); // remove any old files
+
+        let mut btree = BTree::<String, String>::new(FILE_PATH.to_owned(), 15, 15).unwrap();
+
+        let size = btree.insert("Hello".to_owned(), "World".to_owned()).unwrap(); // insert into a new file
+
+        assert!(btree.wal_file.metadata().unwrap().len() == size as u64);
     }
 }
