@@ -65,14 +65,14 @@ struct WALRecord<K: KeyType, V: ValueType> {
 /// |-------------------------------------------|
 pub struct BTree<K: KeyType, V: ValueType> {
     tree_file: File,          // the file backing the whole thing
-    wal_file: File,           // write-ahead log for in-memory items
+    wal_file: File,      // write-ahead log for in-memory items
     root: Option<Node<K,V>>,  // optional in-memory copy of the root node
     max_key_size: usize,      // the size of the key in bytes
     max_value_size: usize,    // the size of the value in bytes
     mem_tree: BTreeMap<K, V>,
 }
 
-impl <K: KeyType, V: ValueType> BTree<K, V> {
+impl <'a, K: KeyType, V: ValueType> BTree<K, V> {
     pub fn new(tree_file_path: String, max_key_size: usize, max_value_size: usize) -> Result<BTree<K,V>, Box<Error>> {
         // create our mem_tree
         let mut mem_tree = BTreeMap::new();
@@ -165,6 +165,19 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
                      mem_tree: mem_tree
             })
         }
+    }
+
+    pub fn insert_wal(&mut self, key: K, value: V) -> Result<(), Box<Error>> {
+        let record = WALRecord{key: key, value: value};
+
+        let record_size = self.max_key_size + self.max_value_size;
+        let buff = try!(encode(&record, SizeLimit::Bounded(record_size as u64)));
+
+        try!(self.wal_file.write_all(&buff));
+
+        self.mem_tree.insert(key, value);
+
+        Ok( () )
     }
 }
 
