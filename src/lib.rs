@@ -8,7 +8,7 @@ use rustc_serialize::{Encodable, Decodable};
 
 use std::cmp::max;
 use std::convert::From;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fs::File;
 use std::fs::OpenOptions;
@@ -22,11 +22,11 @@ const CURRENT_VERSION: u8 = 0x01;
 
 // specify the types for the keys & values
 pub trait KeyType: Ord + Encodable + Decodable {}
-pub trait ValueType: Encodable + Decodable {}
+pub trait ValueType: Ord + Encodable + Decodable {}
 
 // provide generic implementations
-impl<T> KeyType for T where T: Ord + Encodable + Decodable {}
-impl<T> ValueType for T where T: Encodable + Decodable {}
+impl<T> KeyType for T where T: KeyType {}
+impl<T> ValueType for T where T: ValueType {}
 
 #[derive(RustcEncodable, RustcDecodable, PartialEq)]
 enum Payload<K: KeyType, V: ValueType> {
@@ -70,13 +70,13 @@ pub struct BTree<K: KeyType, V: ValueType> {
     root: Option<Node<K,V>>,        // optional in-memory copy of the root node
     max_key_size: usize,            // the size of the key in bytes
     max_value_size: usize,          // the size of the value in bytes
-    mem_tree: BTreeMap<K, Vec<V>>,  // the in-memory BTree that gets merged with the on-disk one
+    mem_tree: BTreeMap<K, BTreeSet<V>>,  // the in-memory BTree that gets merged with the on-disk one
 }
 
 impl <K: KeyType, V: ValueType> BTree<K, V> {
     pub fn new(tree_file_path: String, max_key_size: usize, max_value_size: usize) -> Result<BTree<K,V>, Box<Error>> {
         // create our mem_tree
-        let mut mem_tree = BTreeMap::<K, Vec<V>>::new();
+        let mut mem_tree = BTreeMap::<K, BTreeSet<V>>::new();
 
         let mut wal_file = try!(OpenOptions::new().read(true).write(true).create(true).open(tree_file_path.to_owned() + ".wal"));
 
@@ -86,11 +86,11 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
         if try!(wal_file.metadata()).len() != 0 {
             let mut buff = vec![0; record_size];
 
-            while true {
+            loop {
                 match wal_file.read_exact(&mut buff) {
                     Ok(_) => {
                         let record: WALRecord<K,V> = try!(decode(&buff));  // decode the record
-                        mem_tree.entry(record.key).or_insert(vec![]).push(record.value);  // add it to the in-memory table
+                        mem_tree.entry(record.key).or_insert(BTreeSet::<V>::new()).insert(record.value);  // add it to the in-memory table
                     },
                     Err(e) => if e.kind() == ErrorKind::UnexpectedEof {
                         break  // reached the end of our file, break from the loop
@@ -179,7 +179,7 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
 
         let WALRecord{key, value} = record;
 
-        self.mem_tree.entry(key).or_insert(vec![]).push(value);
+        self.mem_tree.entry(key).or_insert(BTreeSet::<V>::new()).insert(value);
 
         Ok(buff.len())
     }
