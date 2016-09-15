@@ -25,8 +25,8 @@ pub trait KeyType: Ord + Encodable + Decodable {}
 pub trait ValueType: Ord + Encodable + Decodable {}
 
 // provide generic implementations
-impl<T> KeyType for T where T: KeyType {}
-impl<T> ValueType for T where T: ValueType {}
+impl<T> KeyType for T where T: Ord + Encodable + Decodable {}
+impl<T> ValueType for T where T: Ord + Encodable + Decodable {}
 
 #[derive(RustcEncodable, RustcDecodable, PartialEq)]
 enum Payload<K: KeyType, V: ValueType> {
@@ -170,10 +170,17 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
     pub fn insert(&mut self, key: K, value: V) -> Result<usize, Box<Error>> {
         let record = WALRecord{key: key, value: value};
 
+        // encode the record
         let record_size = self.max_key_size + self.max_value_size;
-        let buff = try!(encode(&record, SizeLimit::Bounded(record_size as u64)));
+        let mut buff = try!(encode(&record, SizeLimit::Bounded(record_size as u64)));
 
-        println!("BUFF SIZE: {}", buff.len());
+        // padd it out to the max size
+        if buff.len() > self.max_key_size + self.max_value_size {
+            return Err(From::from(std::io::Error::new(ErrorKind::InvalidData, "Key and value size are too large")));
+        } else {
+            let diff = (self.max_key_size + self.max_value_size) - buff.len();
+            buff.extend(vec![0; diff]);
+        }
 
         try!(self.wal_file.write_all(&buff));
 
@@ -182,6 +189,11 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
         self.mem_tree.entry(key).or_insert(BTreeSet::<V>::new()).insert(value);
 
         Ok(buff.len())
+    }
+
+    /// Merges the records on disk with the records in memory
+    fn compact(&mut self) {
+
     }
 }
 
