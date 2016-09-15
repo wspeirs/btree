@@ -2,6 +2,8 @@ extern crate bincode;
 extern crate rustc_serialize;
 extern crate rand;
 
+mod record_iterator;
+
 use bincode::SizeLimit;
 use bincode::rustc_serialize::{encode, decode};
 use rustc_serialize::{Encodable, Decodable};
@@ -65,6 +67,7 @@ struct WALRecord<K: KeyType, V: ValueType> {
 /// | root node                                 |
 /// |-------------------------------------------|
 pub struct BTree<K: KeyType, V: ValueType> {
+    tree_file_path: String,         // the path to the tree file
     tree_file: File,                // the file backing the whole thing
     wal_file: File,                 // write-ahead log for in-memory items
     root: Option<Node<K,V>>,        // optional in-memory copy of the root node
@@ -118,7 +121,8 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
             try!(tree_file.write(&[CURRENT_VERSION]));
 
             // construct and return our BTree object
-            Ok(BTree{tree_file: tree_file,
+            Ok(BTree{tree_file_path: tree_file_path,
+                     tree_file: tree_file,
                      wal_file: wal_file,
                      root: None,
                      max_key_size: max_key_size,
@@ -141,7 +145,8 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
             // make sure we have a root node to read
             if metadata.len() < (version_string.len() + node_size) as u64 {
                 // if we don't have a root node yet, just return
-                return Ok(BTree{tree_file: tree_file,
+                return Ok(BTree{tree_file_path: tree_file_path,
+                                tree_file: tree_file,
                                 wal_file: wal_file,
                                 root: None,
                                 max_key_size: max_key_size,
@@ -156,7 +161,8 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
 
             let root_node: Node<K,V> = try!(decode(&buff[..]));
 
-            Ok(BTree{tree_file: tree_file,
+            Ok(BTree{tree_file_path: tree_file_path,
+                     tree_file: tree_file,
                      wal_file: wal_file,
                      root: Some(root_node),
                      max_key_size: max_key_size,
@@ -192,8 +198,15 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
     }
 
     /// Merges the records on disk with the records in memory
-    fn compact(&mut self) {
+    fn compact(&mut self) -> Result<(), Box<Error>>{
+        let mut new_tree_file = try!(OpenOptions::new().read(true).write(true).create(true).truncate(true).open(self.tree_file_path + ".new"));
 
+        let mut mem_iter = self.mem_tree.iter().fuse();  // get an iterator that always returns None when done
+
+        loop {
+            let mem_item = mem_iter.next();
+            
+        }
     }
 }
 
