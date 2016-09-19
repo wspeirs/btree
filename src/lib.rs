@@ -173,8 +173,6 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
         let record_size = self.max_key_size + self.max_value_size;
         let buff = try!(encode(&record, SizeLimit::Bounded(record_size as u64)));
 
-        println!("BUFF SIZE: {}", buff.len());
-
         try!(self.wal_file.write_all(&buff));
 
         let WALRecord{key, value} = record;
@@ -198,7 +196,7 @@ mod tests {
     fn gen_temp_name() -> String {
         let file_name: String = thread_rng().gen_ascii_chars().take(10).collect();
 
-        return "/tmp/".to_owned() + file_name.as_str() + ".btr";
+        return String::from("/tmp/") + file_name + String::from(".btr");
     }
 
     fn remove_files(file_path: String) {
@@ -246,10 +244,9 @@ mod tests {
         let mut btree = BTree::<u8, u8>::new(file_path.to_owned(), 1, 1).unwrap();
 
         let len = btree.insert(2, 3).unwrap(); // insert into a new file
-
-        println!("LENGTH: {}", len);
-
+        
         assert!(btree.wal_file.metadata().unwrap().len() == 2);
+        assert!(btree.mem_tree.contains_key(&2));
 
         remove_files(file_path); // remove files assuming it all went well
     }
@@ -263,6 +260,22 @@ mod tests {
         let size = btree.insert("Hello".to_owned(), "World".to_owned()).unwrap(); // insert into a new file
 
         assert!(btree.wal_file.metadata().unwrap().len() == size as u64);
+        assert!(btree.mem_tree.contains_key(&"Hello"));
+
+        remove_files(file_path); // remove files assuming it all went well
+    }
+
+    #[test]
+    fn insert_multiple() {
+        let file_path = gen_temp_name();
+
+        let mut btree = BTree::<String, String>::new(file_path.to_owned(), 15, 15).unwrap();
+
+        let size1 = btree.insert("Hello".to_owned(), "World".to_owned()).unwrap(); // insert into a new file
+        assert!(btree.wal_file.metadata().unwrap().len() == size1 as u64);
+
+        let size2 = btree.insert("Hello".to_owned(), "Everyone".to_owned()).unwrap();
+        assert!(btree.wal_file.metadata().unwrap().len() == (size1 + size2) as u64);
 
         remove_files(file_path); // remove files assuming it all went well
     }
