@@ -16,12 +16,12 @@ use std::iter::Peekable;
 use std::marker::PhantomData;
 
 #[derive(RustcEncodable, RustcDecodable, PartialEq)]
-struct KeyValuePair<K: KeyType, V: ValueType> {
-    key: K,
-    value: V,
+pub struct KeyValuePair<K: KeyType, V: ValueType> {
+    pub key: K,
+    pub value: V,
 }
 
-struct WALIterator<K: KeyType, V: ValueType> {
+pub struct WALIterator<K: KeyType, V: ValueType> {
     fd: File,  // the WAL file
     key_size: usize,
     value_size: usize,
@@ -30,7 +30,7 @@ struct WALIterator<K: KeyType, V: ValueType> {
 }
 
 impl <K: KeyType, V: ValueType> WALIterator<K,V> {
-    fn new(wal_file_path: String, key_size: usize, value_size: usize) -> Result<WALIterator<K,V>, Box<Error>> {
+    pub fn new(wal_file_path: String, key_size: usize, value_size: usize) -> Result<WALIterator<K,V>, Box<Error>> {
         let mut wal_file = try!(OpenOptions::new().read(true).create(false).open(wal_file_path));
 
         return Ok(WALIterator{fd: wal_file,

@@ -4,6 +4,9 @@ extern crate rand;
 
 mod record_iterator;
 
+use record_iterator::KeyValuePair;
+use record_iterator::WALIterator;
+
 use bincode::SizeLimit;
 use bincode::rustc_serialize::{encode, decode};
 use rustc_serialize::{Encodable, Decodable};
@@ -43,11 +46,6 @@ struct Node<K: KeyType, V: ValueType> {
     payload: Payload<K,V>, // either children, or actual values
 }
 
-#[derive(RustcEncodable, RustcDecodable, PartialEq)]
-struct WALRecord<K: KeyType, V: ValueType> {
-    key: K,
-    value: V,
-}
 
 /// This struct represents an on-disk B+Tree. There are NUM_CHILDREN keys at each
 /// level in the tree. The on-disk format is as follows where VV is the version
@@ -81,18 +79,22 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
         // create our mem_tree
         let mut mem_tree = BTreeMap::<K, BTreeSet<V>>::new();
 
-        let mut wal_file = try!(OpenOptions::new().read(true).write(true).create(true).open(tree_file_path.to_owned() + ".wal"));
+        let wal_file_path = tree_file_path + ".wal";
+        let mut wal_file = try!(OpenOptions::new().read(true).write(true).create(true).open(wal_file_path));
 
         let record_size = max_key_size + max_value_size;
 
         // if we have a WAL file, replay it into the mem_tree
         if try!(wal_file.metadata()).len() != 0 {
+
+            let wal_it = WALIterator::<K,V>::new(wal_file_path, max_key_size, max_value_size);
+/*            
             let mut buff = vec![0; record_size];
 
             loop {
                 match wal_file.read_exact(&mut buff) {
                     Ok(_) => {
-                        let record: WALRecord<K,V> = try!(decode(&buff));  // decode the record
+                        let record: KeyValuePair<K,V> = try!(decode(&buff));  // decode the record
                         mem_tree.entry(record.key).or_insert(BTreeSet::<V>::new()).insert(record.value);  // add it to the in-memory table
                     },
                     Err(e) => if e.kind() == ErrorKind::UnexpectedEof {
@@ -102,13 +104,14 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
                     }
                 }
             }
+*/
         }
 
         // compute the size of a on-disk Node
         let node_size: usize = (max_key_size + size_of::<u64>() + max(max_value_size, (max_key_size + size_of::<u64>()) * NUM_CHILDREN)) as usize;
 
         // open the data file
-        let mut tree_file = try!(OpenOptions::new().read(true).write(true).create(true).open(tree_file_path));
+        let mut tree_file = try!(OpenOptions::new().read(true).write(true).create(true).open(tree_file_path.to_owned()));
 
         let metadata = try!(tree_file.metadata());
 
@@ -174,7 +177,7 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
 
     /// Inserts a key into the BTree
     pub fn insert(&mut self, key: K, value: V) -> Result<usize, Box<Error>> {
-        let record = WALRecord{key: key, value: value};
+        let record = KeyValuePair{key: key, value: value};
 
         // encode the record
         let record_size = self.max_key_size + self.max_value_size;
@@ -189,13 +192,14 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
         }
         try!(self.wal_file.write_all(&buff));
 
-        let WALRecord{key, value} = record;
+        let KeyValuePair{key, value} = record;
 
         self.mem_tree.entry(key).or_insert(BTreeSet::<V>::new()).insert(value);
 
         Ok(buff.len())
     }
 
+/*
     /// Merges the records on disk with the records in memory
     fn compact(&mut self) -> Result<(), Box<Error>>{
         let mut new_tree_file = try!(OpenOptions::new().read(true).write(true).create(true).truncate(true).open(self.tree_file_path + ".new"));
@@ -207,6 +211,7 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
             
         }
     }
+*/
 }
 
 
