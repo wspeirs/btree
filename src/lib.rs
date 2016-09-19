@@ -2,13 +2,15 @@ extern crate bincode;
 extern crate rustc_serialize;
 extern crate rand;
 
+mod record_iterator;
+
 use bincode::SizeLimit;
 use bincode::rustc_serialize::{encode, decode};
 use rustc_serialize::{Encodable, Decodable};
 
 use std::cmp::max;
 use std::convert::From;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::fs::File;
 use std::fs::OpenOptions;
@@ -22,11 +24,11 @@ const CURRENT_VERSION: u8 = 0x01;
 
 // specify the types for the keys & values
 pub trait KeyType: Ord + Encodable + Decodable {}
-pub trait ValueType: Encodable + Decodable {}
+pub trait ValueType: Ord + Encodable + Decodable {}
 
 // provide generic implementations
 impl<T> KeyType for T where T: Ord + Encodable + Decodable {}
-impl<T> ValueType for T where T: Encodable + Decodable {}
+impl<T> ValueType for T where T: Ord + Encodable + Decodable {}
 
 #[derive(RustcEncodable, RustcDecodable, PartialEq)]
 enum Payload<K: KeyType, V: ValueType> {
@@ -65,18 +67,19 @@ struct WALRecord<K: KeyType, V: ValueType> {
 /// | root node                                 |
 /// |-------------------------------------------|
 pub struct BTree<K: KeyType, V: ValueType> {
+    tree_file_path: String,         // the path to the tree file
     tree_file: File,                // the file backing the whole thing
     wal_file: File,                 // write-ahead log for in-memory items
     root: Option<Node<K,V>>,        // optional in-memory copy of the root node
     max_key_size: usize,            // the size of the key in bytes
     max_value_size: usize,          // the size of the value in bytes
-    mem_tree: BTreeMap<K, Vec<V>>,  // the in-memory BTree that gets merged with the on-disk one
+    mem_tree: BTreeMap<K, BTreeSet<V>>,  // the in-memory BTree that gets merged with the on-disk one
 }
 
 impl <K: KeyType, V: ValueType> BTree<K, V> {
     pub fn new(tree_file_path: String, max_key_size: usize, max_value_size: usize) -> Result<BTree<K,V>, Box<Error>> {
         // create our mem_tree
-        let mut mem_tree = BTreeMap::<K, Vec<V>>::new();
+        let mut mem_tree = BTreeMap::<K, BTreeSet<V>>::new();
 
         let mut wal_file = try!(OpenOptions::new().read(true).write(true).create(true).open(tree_file_path.to_owned() + ".wal"));
 
@@ -86,11 +89,11 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
         if try!(wal_file.metadata()).len() != 0 {
             let mut buff = vec![0; record_size];
 
-            while true {
+            loop {
                 match wal_file.read_exact(&mut buff) {
                     Ok(_) => {
                         let record: WALRecord<K,V> = try!(decode(&buff));  // decode the record
-                        mem_tree.entry(record.key).or_insert(vec![]).push(record.value);  // add it to the in-memory table
+                        mem_tree.entry(record.key).or_insert(BTreeSet::<V>::new()).insert(record.value);  // add it to the in-memory table
                     },
                     Err(e) => if e.kind() == ErrorKind::UnexpectedEof {
                         break  // reached the end of our file, break from the loop
@@ -118,7 +121,8 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
             try!(tree_file.write(&[CURRENT_VERSION]));
 
             // construct and return our BTree object
-            Ok(BTree{tree_file: tree_file,
+            Ok(BTree{tree_file_path: tree_file_path,
+                     tree_file: tree_file,
                      wal_file: wal_file,
                      root: None,
                      max_key_size: max_key_size,
@@ -141,7 +145,8 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
             // make sure we have a root node to read
             if metadata.len() < (version_string.len() + node_size) as u64 {
                 // if we don't have a root node yet, just return
-                return Ok(BTree{tree_file: tree_file,
+                return Ok(BTree{tree_file_path: tree_file_path,
+                                tree_file: tree_file,
                                 wal_file: wal_file,
                                 root: None,
                                 max_key_size: max_key_size,
@@ -156,7 +161,8 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
 
             let root_node: Node<K,V> = try!(decode(&buff[..]));
 
-            Ok(BTree{tree_file: tree_file,
+            Ok(BTree{tree_file_path: tree_file_path,
+                     tree_file: tree_file,
                      wal_file: wal_file,
                      root: Some(root_node),
                      max_key_size: max_key_size,
@@ -170,16 +176,36 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
     pub fn insert(&mut self, key: K, value: V) -> Result<usize, Box<Error>> {
         let record = WALRecord{key: key, value: value};
 
+        // encode the record
         let record_size = self.max_key_size + self.max_value_size;
-        let buff = try!(encode(&record, SizeLimit::Bounded(record_size as u64)));
+        let mut buff = try!(encode(&record, SizeLimit::Bounded(record_size as u64)));
 
+        // padd it out to the max size
+        if buff.len() > self.max_key_size + self.max_value_size {
+            return Err(From::from(std::io::Error::new(ErrorKind::InvalidData, "Key and value size are too large")));
+        } else {
+            let diff = (self.max_key_size + self.max_value_size) - buff.len();
+            buff.extend(vec![0; diff]);
+        }
         try!(self.wal_file.write_all(&buff));
 
         let WALRecord{key, value} = record;
 
-        self.mem_tree.entry(key).or_insert(vec![]).push(value);
+        self.mem_tree.entry(key).or_insert(BTreeSet::<V>::new()).insert(value);
 
         Ok(buff.len())
+    }
+
+    /// Merges the records on disk with the records in memory
+    fn compact(&mut self) -> Result<(), Box<Error>>{
+        let mut new_tree_file = try!(OpenOptions::new().read(true).write(true).create(true).truncate(true).open(self.tree_file_path + ".new"));
+
+        let mut mem_iter = self.mem_tree.iter().fuse();  // get an iterator that always returns None when done
+
+        loop {
+            let mem_item = mem_iter.next();
+            
+        }
     }
 }
 
