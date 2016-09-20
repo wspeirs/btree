@@ -2,10 +2,9 @@ extern crate bincode;
 extern crate rustc_serialize;
 extern crate rand;
 
-mod record_iterator;
+mod wal_file;
 
-use record_iterator::KeyValuePair;
-use record_iterator::WALIterator;
+use wal_file::{KeyValuePair, WALFile, WALIterator};
 
 use bincode::SizeLimit;
 use bincode::rustc_serialize::{encode, decode};
@@ -67,7 +66,7 @@ struct Node<K: KeyType, V: ValueType> {
 pub struct BTree<K: KeyType, V: ValueType> {
     tree_file_path: String,         // the path to the tree file
     tree_file: File,                // the file backing the whole thing
-    wal_file: File,                 // write-ahead log for in-memory items
+    wal_file: WALFile<K,V>,              // write-ahead log for in-memory items
     root: Option<Node<K,V>>,        // optional in-memory copy of the root node
     max_key_size: usize,            // the size of the key in bytes
     max_value_size: usize,          // the size of the value in bytes
@@ -79,32 +78,22 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
         // create our mem_tree
         let mut mem_tree = BTreeMap::<K, BTreeSet<V>>::new();
 
-        let wal_file_path = tree_file_path + ".wal";
-        let mut wal_file = try!(OpenOptions::new().read(true).write(true).create(true).open(wal_file_path));
+        let wal_file_path = tree_file_path.to_owned() + ".wal";
+        let mut wal_file = try!(WALFile::<K,V>::new(wal_file_path.to_owned(), max_key_size, max_value_size));
 
         let record_size = max_key_size + max_value_size;
 
         // if we have a WAL file, replay it into the mem_tree
-        if try!(wal_file.metadata()).len() != 0 {
-
-            let wal_it = WALIterator::<K,V>::new(wal_file_path, max_key_size, max_value_size);
-/*            
-            let mut buff = vec![0; record_size];
+        if try!(wal_file.is_new()) {
+            let wal_it = wal_file.iter();
 
             loop {
-                match wal_file.read_exact(&mut buff) {
-                    Ok(_) => {
-                        let record: KeyValuePair<K,V> = try!(decode(&buff));  // decode the record
-                        mem_tree.entry(record.key).or_insert(BTreeSet::<V>::new()).insert(record.value);  // add it to the in-memory table
-                    },
-                    Err(e) => if e.kind() == ErrorKind::UnexpectedEof {
-                        break  // reached the end of our file, break from the loop
-                    } else {
-                        return Err(From::from(e));
-                    }
+                match wal_it.next() {
+                    // add it to the in-memory table
+                    Some(kv) => mem_tree.entry(kv.key).or_insert(BTreeSet::<V>::new()).insert(kv.value),
+                    None => break,
                 }
             }
-*/
         }
 
         // compute the size of a on-disk Node
@@ -176,27 +165,16 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
     }
 
     /// Inserts a key into the BTree
-    pub fn insert(&mut self, key: K, value: V) -> Result<usize, Box<Error>> {
+    pub fn insert(&mut self, key: K, value: V) -> Result<(), Box<Error>> {
         let record = KeyValuePair{key: key, value: value};
 
-        // encode the record
-        let record_size = self.max_key_size + self.max_value_size;
-        let mut buff = try!(encode(&record, SizeLimit::Bounded(record_size as u64)));
-
-        // padd it out to the max size
-        if buff.len() > self.max_key_size + self.max_value_size {
-            return Err(From::from(std::io::Error::new(ErrorKind::InvalidData, "Key and value size are too large")));
-        } else {
-            let diff = (self.max_key_size + self.max_value_size) - buff.len();
-            buff.extend(vec![0; diff]);
-        }
-        try!(self.wal_file.write_all(&buff));
+        try!(self.wal_file.write_record(record));
 
         let KeyValuePair{key, value} = record;
 
         self.mem_tree.entry(key).or_insert(BTreeSet::<V>::new()).insert(value);
 
-        Ok(buff.len())
+        Ok( () )
     }
 
 /*
@@ -217,14 +195,13 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
 
 #[cfg(test)]
 mod tests {
-
     use std::fs;
     use std::fs::OpenOptions;
     use ::BTree;
     use rand::{thread_rng, Rng};
 
 
-    fn gen_temp_name() -> String {
+    pub fn gen_temp_name() -> String {
         let file_name: String = thread_rng().gen_ascii_chars().take(10).collect();
 
         return String::from("/tmp/") + file_name + String::from(".btr");
