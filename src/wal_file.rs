@@ -31,8 +31,8 @@ pub struct WALFile<K: KeyType, V: ValueType> {
     _v_marker: PhantomData<V>
 }
 
-pub struct WALIterator<K: KeyType, V: ValueType> {
-    wal_file: WALFile<K,V>,  // the WAL file
+pub struct WALIterator<'a, K: KeyType, V: ValueType> {
+    wal_file: &'a WALFile<K,V>,  // the WAL file
     _k_marker: PhantomData<K>,
     _v_marker: PhantomData<V>
 }
@@ -49,7 +49,7 @@ impl <K: KeyType, V: ValueType> WALFile<K,V> {
     }
 
     pub fn iter(&self) -> WALIterator<K,V> {
-        WALIterator{wal_file: *self, _k_marker: self._k_marker, _v_marker: self._v_marker}
+        WALIterator{wal_file: self, _k_marker: self._k_marker, _v_marker: self._v_marker}
     }
 
     pub fn is_new(&self) -> Result<bool, Box<Error>> {
@@ -69,11 +69,14 @@ impl <K: KeyType, V: ValueType> WALFile<K,V> {
             buff.extend(vec![0; diff]);
         }
 
-        try!(self.fd.write_all(&buff))
+        match self.fd.write_all(&buff) {
+            Ok(_) => Ok( () ),
+            Err(e) => Err(From::from(e))
+        }
     }
 }
 
-impl <K: KeyType, V: ValueType> Iterator for WALIterator<K,V> {
+impl <'a, K: KeyType, V: ValueType> Iterator for WALIterator<'a, K,V> {
     type Item = KeyValuePair<K,V>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -128,27 +131,29 @@ mod tests {
     use tests::gen_temp_name;
     use std::fs;
     use std::fs::OpenOptions;
-    use record_iterator::KeyValuePair;
+    use wal_file::{WALFile, KeyValuePair};
 
     #[test]
     fn test_iterator() {
         let file_path = gen_temp_name();
+        let wal_file = WALFile::new(file_path.to_owned() + ".wal", 20, 20).unwrap();
 
-        let wal = OpenOptions::new().read(true).write(true).create(true).open(&file_path).unwrap();
+        let kv1 = KeyValuePair{key: "hello".to_owned(), value: "world".to_owned()};
+        let kv2 = KeyValuePair{key: "foo".to_owned(), value: "bar".to_owned()};
 
-        let kv = KeyValuePair{key: "hello", value: "world"};
+        wal_file.write_record(kv1);
+        wal_file.write_record(kv2);
 
-        let record_size = 20;
-        let mut buff = try!(encode(&kv, SizeLimit::Bounded(record_size as u64)));
+        let wal_it = wal_file.iter();
 
-        // padd it out to the max size
-        if buff.len() > record_size {
-            panic!("Key and value size are too large");
-        } else {
-            let diff = record_size - buff.len();
-            buff.extend(vec![0; diff]);
-        }
+        let it_kv1 = wal_it.next().unwrap();
 
-        try!(self.wal_file.write_all(&buff));
+        assert!(kv1.key == it_kv1.key);
+        assert!(kv1.value == it_kv1.value);
+
+        let it_kv2 = wal_it.next().unwrap();
+
+        assert!(kv2.key == it_kv2.key);
+        assert!(kv2.value == it_kv2.value);
     }
 }
