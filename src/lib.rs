@@ -168,7 +168,7 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
     pub fn insert(&mut self, key: K, value: V) -> Result<(), Box<Error>> {
         let record = KeyValuePair{key: key, value: value};
 
-        try!(self.wal_file.write_record(record));
+        try!(self.wal_file.write_record(&record));
 
         let KeyValuePair{key, value} = record;
 

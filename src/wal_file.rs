@@ -31,15 +31,15 @@ pub struct WALFile<K: KeyType, V: ValueType> {
     _v_marker: PhantomData<V>
 }
 
-pub struct WALIterator<'a, K: KeyType, V: ValueType> {
-    wal_file: &'a WALFile<K,V>,  // the WAL file
+pub struct WALIterator<K: KeyType, V: ValueType> {
+    wal_file: WALFile<K,V>,  // the WAL file
     _k_marker: PhantomData<K>,
     _v_marker: PhantomData<V>
 }
 
 impl <K: KeyType, V: ValueType> WALFile<K,V> {
     pub fn new(wal_file_path: String, key_size: usize, value_size: usize) -> Result<WALFile<K,V>, Box<Error>> {
-        let wal_file = try!(OpenOptions::new().read(true).create(false).open(wal_file_path));
+        let mut wal_file = try!(OpenOptions::new().read(true).create(false).open(wal_file_path));
 
         return Ok(WALFile{fd: wal_file,
                           key_size: key_size,
@@ -49,14 +49,14 @@ impl <K: KeyType, V: ValueType> WALFile<K,V> {
     }
 
     pub fn iter(&self) -> WALIterator<K,V> {
-        WALIterator{wal_file: self, _k_marker: self._k_marker, _v_marker: self._v_marker}
+        WALIterator{wal_file: *self, _k_marker: self._k_marker, _v_marker: self._v_marker}
     }
 
     pub fn is_new(&self) -> Result<bool, Box<Error>> {
         return Ok(try!(self.fd.metadata()).len() == 0);
     }
 
-    pub fn write_record(&self, kv: KeyValuePair<K,V>) -> Result<(), Box<Error>> {
+    pub fn write_record(&mut self, kv: &KeyValuePair<K,V>) -> Result<(), Box<Error>> {
         // encode the record
         let record_size = self.key_size + self.value_size;
         let mut buff = try!(encode(&kv, SizeLimit::Bounded(record_size as u64)));
@@ -76,7 +76,7 @@ impl <K: KeyType, V: ValueType> WALFile<K,V> {
     }
 }
 
-impl <'a, K: KeyType, V: ValueType> Iterator for WALIterator<'a, K,V> {
+impl <'a, K: KeyType, V: ValueType> Iterator for WALIterator<K,V> {
     type Item = KeyValuePair<K,V>;
 
     fn next(&mut self) -> Option<Self::Item> {
