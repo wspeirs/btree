@@ -85,14 +85,8 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
 
         // if we have a WAL file, replay it into the mem_tree
         if try!(wal_file.is_new()) {
-            let mut wal_it = wal_file.into_iter();
-
-            loop {
-                match wal_it.next() {
-                    // add it to the in-memory table
-                    Some(kv) => {mem_tree.entry(kv.key).or_insert(BTreeSet::<V>::new()).insert(kv.value);},
-                    None => break,
-                }
+            for kv in wal_file {
+                mem_tree.entry(kv.key).or_insert(BTreeSet::<V>::new()).insert(kv.value);
             }
         }
 
