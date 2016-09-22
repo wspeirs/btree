@@ -31,8 +31,8 @@ pub struct WALFile<K: KeyType, V: ValueType> {
     _v_marker: PhantomData<V>
 }
 
-pub struct WALIterator<K: KeyType, V: ValueType> {
-    wal_file: WALFile<K,V>,  // the WAL file
+pub struct WALIterator<'a, K: KeyType + 'a, V: ValueType + 'a> {
+    wal_file: &'a mut WALFile<K,V>,  // the WAL file
     _k_marker: PhantomData<K>,
     _v_marker: PhantomData<V>
 }
@@ -72,9 +72,9 @@ impl <K: KeyType, V: ValueType> WALFile<K,V> {
     }
 }
 
-impl <K: KeyType, V: ValueType> IntoIterator for WALFile<K,V> {
+impl <'a, K: KeyType, V: ValueType> IntoIterator for &'a mut WALFile<K,V> {
     type Item = KeyValuePair<K,V>;
-    type IntoIter = WALIterator<K,V>;
+    type IntoIter = WALIterator<'a, K,V>;
 
     fn into_iter(self) -> Self::IntoIter {
         let k_marker = self._k_marker;
@@ -84,7 +84,7 @@ impl <K: KeyType, V: ValueType> IntoIterator for WALFile<K,V> {
     }
 }
 
-impl <'a, K: KeyType, V: ValueType> Iterator for WALIterator<K,V> {
+impl <'a, K: KeyType, V: ValueType> Iterator for WALIterator<'a,K,V> {
     type Item = KeyValuePair<K,V>;
 
     fn next(&mut self) -> Option<Self::Item> {

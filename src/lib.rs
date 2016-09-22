@@ -85,7 +85,7 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
 
         // if we have a WAL file, replay it into the mem_tree
         if try!(wal_file.is_new()) {
-            for kv in wal_file {
+            for kv in &mut wal_file {
                 mem_tree.entry(kv.key).or_insert(BTreeSet::<V>::new()).insert(kv.value);
             }
         }
