@@ -48,10 +48,6 @@ impl <K: KeyType, V: ValueType> WALFile<K,V> {
                           _v_marker: PhantomData});
     }
 
-    pub fn iter(&self) -> WALIterator<K,V> {
-        WALIterator{wal_file: *self, _k_marker: self._k_marker, _v_marker: self._v_marker}
-    }
-
     pub fn is_new(&self) -> Result<bool, Box<Error>> {
         return Ok(try!(self.fd.metadata()).len() == 0);
     }
@@ -73,6 +69,18 @@ impl <K: KeyType, V: ValueType> WALFile<K,V> {
             Ok(_) => Ok( () ),
             Err(e) => Err(From::from(e))
         }
+    }
+}
+
+impl <K: KeyType, V: ValueType> IntoIterator for WALFile<K,V> {
+    type Item = KeyValuePair<K,V>;
+    type IntoIter = WALIterator<K,V>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        let k_marker = self._k_marker;
+        let v_marker = self._v_marker;
+
+        WALIterator{wal_file: self, _k_marker: k_marker, _v_marker: v_marker}
     }
 }
 
