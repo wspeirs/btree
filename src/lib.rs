@@ -85,7 +85,7 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
 
         // if we have a WAL file, replay it into the mem_tree
         if try!(wal_file.is_new()) {
-            let mut wal_it = wal_file.iter();
+            let mut wal_it = wal_file.into_iter();
 
             loop {
                 match wal_it.next() {
