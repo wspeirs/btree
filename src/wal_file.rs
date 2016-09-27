@@ -12,7 +12,7 @@ use std::collections::btree_map::Iter as MIter;
 use std::collections::btree_set::Iter as SIter;
 use std::error::Error;
 use std::fs::{File, OpenOptions};
-use std::io::{Read, Write, ErrorKind};
+use std::io::{Read, Write, ErrorKind, Seek, SeekFrom};
 use std::io::Error as IOError;
 use std::iter::Peekable;
 use std::marker::PhantomData;
@@ -39,7 +39,7 @@ pub struct WALIterator<'a, K: KeyType + 'a, V: ValueType + 'a> {
 
 impl <K: KeyType, V: ValueType> WALFile<K,V> {
     pub fn new(wal_file_path: String, key_size: usize, value_size: usize) -> Result<WALFile<K,V>, Box<Error>> {
-        let mut wal_file = try!(OpenOptions::new().read(true).create(false).open(wal_file_path));
+        let mut wal_file = try!(OpenOptions::new().read(true).write(true).create(false).open(wal_file_path));
 
         return Ok(WALFile{fd: wal_file,
                           key_size: key_size,
@@ -80,6 +80,10 @@ impl <'a, K: KeyType, V: ValueType> IntoIterator for &'a mut WALFile<K,V> {
         let k_marker = self._k_marker;
         let v_marker = self._v_marker;
 
+        // seek back to the start
+        self.fd.seek(SeekFrom::Start(0));
+
+        // create our iterator
         WALIterator{wal_file: self, _k_marker: k_marker, _v_marker: v_marker}
     }
 }
@@ -91,6 +95,8 @@ impl <'a, K: KeyType, V: ValueType> Iterator for WALIterator<'a,K,V> {
         let total_size = self.wal_file.key_size + self.wal_file.value_size;
         let mut buff = vec![0; total_size];
 
+        println!("Creating buffer: {}", total_size);
+
         // attempt to read a buffer's worth and decode
         match self.wal_file.fd.read_exact(&mut buff) {
             Ok(_) => {
@@ -99,40 +105,14 @@ impl <'a, K: KeyType, V: ValueType> Iterator for WALIterator<'a,K,V> {
                     Err(_) => None
                 }
             },
-            Err(_) => None
+            Err(e) => {
+                println!("ERROR: {}", e);
+                None
+            }
         }
     }
 }
 
-/*
-
-struct MemoryRecordIterator<'a, 'b, K: KeyType, V: ValueType> {
-    key_size: usize,
-    value_size: usize,
-    key_iter: Peekable<MIter<'a, K, BTreeSet<V>>>,
-    value_iter: Option<Peekable<SIter<'b, V>>>
-}
-
-impl <'a, 'b, K: KeyType, V: ValueType> MemoryRecordIterator<'a, 'b, K, V> {
-    fn new(key_size: usize, value_size: usize, mem_tree: BTreeMap<K, BTreeSet<V>>) -> MemoryRecordIterator<'a, 'b, K,V> {
-        let key_it = mem_tree.iter().peekable();
-
-        MemoryRecordIterator {key_size: key_size,
-                              value_size: value_size,
-                              key_iter: key_it, 
-                              value_iter: key_it.peek().iter().peekable()}
-    }
-}
-
-impl <'a, 'b, K: KeyType, V: ValueType> Iterator for MemoryRecordIterator<'a, 'b, K,V> {
-    type Item = Vec<u8>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-
-    }
-}
-
-*/
 
 #[cfg(test)]
 mod tests {
@@ -143,16 +123,21 @@ mod tests {
 
     #[test]
     fn test_iterator() {
-        let file_path = gen_temp_name();
-        let wal_file = WALFile::new(file_path.to_owned() + ".wal", 20, 20).unwrap();
+        let temp_path = gen_temp_name();
+        let file_path = temp_path.to_owned() + ".wal";
+
+        // create a new blank file
+        OpenOptions::new().read(true).write(true).truncate(true).create(true).open(&file_path);
+
+        let mut wal_file = WALFile::new(file_path, 20, 20).unwrap();
 
         let kv1 = KeyValuePair{key: "hello".to_owned(), value: "world".to_owned()};
         let kv2 = KeyValuePair{key: "foo".to_owned(), value: "bar".to_owned()};
 
-        wal_file.write_record(kv1);
-        wal_file.write_record(kv2);
+        wal_file.write_record(&kv1).unwrap();
+        wal_file.write_record(&kv2).unwrap();
 
-        let wal_it = wal_file.iter();
+        let mut wal_it = wal_file.into_iter();
 
         let it_kv1 = wal_it.next().unwrap();
 
