@@ -39,7 +39,7 @@ pub struct WALIterator<'a, K: KeyType + 'a, V: ValueType + 'a> {
 
 impl <K: KeyType, V: ValueType> WALFile<K,V> {
     pub fn new(wal_file_path: String, key_size: usize, value_size: usize) -> Result<WALFile<K,V>, Box<Error>> {
-        let mut wal_file = try!(OpenOptions::new().read(true).write(true).create(false).open(wal_file_path));
+        let mut wal_file = try!(OpenOptions::new().read(true).write(true).create(true).open(wal_file_path));
 
         return Ok(WALFile{fd: wal_file,
                           key_size: key_size,
@@ -49,7 +49,11 @@ impl <K: KeyType, V: ValueType> WALFile<K,V> {
     }
 
     pub fn is_new(&self) -> Result<bool, Box<Error>> {
-        return Ok(try!(self.fd.metadata()).len() == 0);
+        Ok(try!(self.fd.metadata()).len() == 0)
+    }
+
+    pub fn len(&self) -> Result<u64, Box<Error>> {
+        Ok(try!(self.fd.metadata()).len())
     }
 
     pub fn write_record(&mut self, kv: &KeyValuePair<K,V>) -> Result<(), Box<Error>> {

@@ -79,6 +79,7 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
         let mut mem_tree = BTreeMap::<K, BTreeSet<V>>::new();
 
         let wal_file_path = tree_file_path.to_owned() + ".wal";
+
         let mut wal_file = try!(WALFile::<K,V>::new(wal_file_path.to_owned(), max_key_size, max_value_size));
 
         let record_size = max_key_size + max_value_size;
@@ -190,7 +191,7 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
 #[cfg(test)]
 mod tests {
     use std::fs;
-    use std::fs::OpenOptions;
+    use std::fs::{OpenOptions, Metadata};
     use ::BTree;
     use rand::{thread_rng, Rng};
 
@@ -205,7 +206,7 @@ mod tests {
         fs::remove_file(&file_path);
         fs::remove_file(file_path + ".wal");
     }
-/*
+
 
     #[test]
     fn new_blank_file() {
@@ -235,7 +236,7 @@ mod tests {
 
         // check our file lengths from the struct
         assert!(btree.tree_file.metadata().unwrap().len() == 8);
-        assert!(btree.wal_file.metadata().unwrap().len() == 0);
+        assert!(btree.wal_file.len().unwrap() == 0);
 
         remove_files(file_path); // remove files assuming it all went well
     }
@@ -248,7 +249,7 @@ mod tests {
 
         let len = btree.insert(2, 3).unwrap(); // insert into a new file
         
-        assert!(btree.wal_file.metadata().unwrap().len() == 2);
+        assert!(btree.wal_file.len().unwrap() == 2);
         assert!(btree.mem_tree.contains_key(&2));
 
         remove_files(file_path); // remove files assuming it all went well
@@ -260,10 +261,11 @@ mod tests {
 
         let mut btree = BTree::<String, String>::new(file_path.to_owned(), 15, 15).unwrap();
 
-        let size = btree.insert("Hello".to_owned(), "World".to_owned()).unwrap(); // insert into a new file
+        // insert into a new file
+        btree.insert("Hello".to_owned(), "World".to_owned()).unwrap();
 
-        assert!(btree.wal_file.metadata().unwrap().len() == size as u64);
-        assert!(btree.mem_tree.contains_key(&"Hello"));
+        assert!(! btree.wal_file.is_new().unwrap());
+        assert!(btree.mem_tree.contains_key(&String::from("Hello")));
 
         remove_files(file_path); // remove files assuming it all went well
     }
@@ -274,13 +276,13 @@ mod tests {
 
         let mut btree = BTree::<String, String>::new(file_path.to_owned(), 15, 15).unwrap();
 
-        let size1 = btree.insert("Hello".to_owned(), "World".to_owned()).unwrap(); // insert into a new file
-        assert!(btree.wal_file.metadata().unwrap().len() == size1 as u64);
+        // insert into a new file
+        btree.insert("Hello".to_owned(), "World".to_owned()).unwrap();
+        assert!(! btree.wal_file.is_new().unwrap());
 
-        let size2 = btree.insert("Hello".to_owned(), "Everyone".to_owned()).unwrap();
-        assert!(btree.wal_file.metadata().unwrap().len() == (size1 + size2) as u64);
+        btree.insert("Hello".to_owned(), "Everyone".to_owned()).unwrap();
+        assert!(! btree.wal_file.is_new().unwrap());
 
         remove_files(file_path); // remove files assuming it all went well
     }
-*/
 }
