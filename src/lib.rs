@@ -3,8 +3,10 @@ extern crate rustc_serialize;
 extern crate rand;
 
 mod wal_file;
+mod multi_map;
 
 use wal_file::{KeyValuePair, WALFile, WALIterator};
+use multi_map::{MultiMap, MultiMapIterator};
 
 use bincode::SizeLimit;
 use bincode::rustc_serialize::{encode, decode};
