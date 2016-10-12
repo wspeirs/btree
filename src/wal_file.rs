@@ -3,18 +3,13 @@ extern crate rustc_serialize;
 
 use bincode::SizeLimit;
 use bincode::rustc_serialize::{encode, decode};
-use rustc_serialize::{Encodable, Decodable};
 
 use ::{KeyType, ValueType};
 
-use std::collections::{BTreeMap, BTreeSet};
-use std::collections::btree_map::Iter as MIter;
-use std::collections::btree_set::Iter as SIter;
 use std::error::Error;
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write, ErrorKind, Seek, SeekFrom};
 use std::io::Error as IOError;
-use std::iter::Peekable;
 use std::marker::PhantomData;
 
 #[derive(RustcEncodable, RustcDecodable, PartialEq)]
@@ -33,13 +28,11 @@ pub struct WALFile<K: KeyType, V: ValueType> {
 
 pub struct WALIterator<'a, K: KeyType + 'a, V: ValueType + 'a> {
     wal_file: &'a mut WALFile<K,V>,  // the WAL file
-    _k_marker: PhantomData<K>,
-    _v_marker: PhantomData<V>
 }
 
 impl <K: KeyType, V: ValueType> WALFile<K,V> {
     pub fn new(wal_file_path: String, key_size: usize, value_size: usize) -> Result<WALFile<K,V>, Box<Error>> {
-        let mut wal_file = try!(OpenOptions::new().read(true).write(true).create(true).open(wal_file_path));
+        let wal_file = try!(OpenOptions::new().read(true).write(true).create(true).open(wal_file_path));
 
         return Ok(WALFile{fd: wal_file,
                           key_size: key_size,
@@ -81,14 +74,11 @@ impl <'a, K: KeyType, V: ValueType> IntoIterator for &'a mut WALFile<K,V> {
     type IntoIter = WALIterator<'a, K,V>;
 
     fn into_iter(self) -> Self::IntoIter {
-        let k_marker = self._k_marker;
-        let v_marker = self._v_marker;
-
         // seek back to the start
         self.fd.seek(SeekFrom::Start(0));
 
         // create our iterator
-        WALIterator{wal_file: self, _k_marker: k_marker, _v_marker: v_marker}
+        WALIterator{wal_file: self}
     }
 }
 
