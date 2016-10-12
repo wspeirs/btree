@@ -12,7 +12,8 @@ pub struct MultiMap<K: KeyType, V: ValueType> {
 }
 
 pub struct MultiMapIterator<'a, K: KeyType + 'a, V: ValueType + 'a> {
-    key_it: Peekable<btree_map::Iter<'a,K,BTreeSet<V>>>,
+    cur_key: Option<&'a K>,
+    key_it: btree_map::Iter<'a,K,BTreeSet<V>>,
     value_it: Option<btree_set::Iter<'a,V>>,
 }
 
@@ -27,13 +28,18 @@ impl <'a, K: KeyType, V: ValueType> IntoIterator for &'a mut MultiMap<K,V> {
     type IntoIter = MultiMapIterator<'a,K,V>;
 
     fn into_iter(self) -> Self::IntoIter {
-        let mut key_it = self.multi_map.iter().peekable();
-        let value_it = match key_it.peek() {
-            Some(&(_,v)) => Some(v.iter()),
-            None => None // empty::<btree_set::Iter<'a,V>>()
-        };
+        let mut key_it = self.multi_map.iter();
+        let cur_entry = key_it.next();
 
-        MultiMapIterator{key_it: key_it, value_it: value_it}
+        // check to see if our map is empty
+        if cur_entry.is_none() {
+            return MultiMapIterator{cur_key: None, key_it: key_it, value_it: None};
+        }
+
+        // safe to call unwrap as we tested above
+        let (cur_key, cur_set) = cur_entry.unwrap();
+
+        return MultiMapIterator{cur_key: Some(cur_key), key_it: key_it, value_it: Some(cur_set.iter())};
     }
 }
 
@@ -41,29 +47,32 @@ impl <'a, K: KeyType, V: ValueType> Iterator for MultiMapIterator<'a,K,V> {
     type Item = KeyValuePair<K,V>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self.value_it {
-            Some(mut i) => {
-                let &cur_key = self.key_it.peek().unwrap().0;
-                let cur_val = i.next();
-
-                match cur_val {
-                    Some(&v) => return Some(KeyValuePair{key: cur_key, value: v}),
-                    None => {
-                        self.key_it.next(); // increment our key iterator
-
-                        match self.key_it.peek() {
-                            Some(&(&k,v)) => {
-                                self.value_it = Some(v.iter());
-                                let &cur_val = self.value_it.unwrap().next().unwrap();
-                                return Some(KeyValuePair{key: k, value: cur_val});
-                            },
-                            None => return None
-                        }
-                    }
-                }
-            },
-            None => return None // when the value iterator is None, we're done
+        // this is our invariant, when it's None we've gone through everything
+        if self.cur_key.is_none() {
+            return None
         }
+
+        // should be safe to call unwrap here, because we checked for None above
+        let mut cur_val = self.value_it.as_mut().unwrap().next();
+
+        // check to see if we've gone through everything in the set
+        if cur_val.is_none() {
+            let cur_entry = self.key_it.next(); // increment our key iterator
+
+            if cur_entry.is_none() {
+                self.cur_key = None; // set our invariant
+                return None;
+            }
+
+            // safe to call unwrap because we checked it above
+            let (cur_key, cur_set) = cur_entry.unwrap();
+
+            self.cur_key = Some(cur_key); // set our key
+            self.value_it = Some(cur_set.iter()); // set our value iterator
+            cur_val = self.value_it.as_mut().unwrap().next(); // set our current value
+        }
+
+        return Some(KeyValuePair{key: self.cur_key.unwrap(), value: *(cur_val.unwrap())});
     }
 }
 
