@@ -2,7 +2,7 @@ use ::{KeyType, ValueType};
 
 use wal_file::KeyValuePair;
 
-use std::iter::Peekable;
+use std::iter::{Peekable, empty, Map};
 use std::collections::{BTreeMap, BTreeSet};
 use std::collections::btree_map;
 use std::collections::btree_set;
@@ -12,9 +12,8 @@ pub struct MultiMap<K: KeyType, V: ValueType> {
 }
 
 pub struct MultiMapIterator<'a, K: KeyType + 'a, V: ValueType + 'a> {
-    // multi_map: MultiMap<K,V>, // the underlying multi map
     key_it: Peekable<btree_map::Iter<'a,K,BTreeSet<V>>>,
-    value_it: &'a btree_set::Iter<'a,V>,
+    value_it: btree_set::Iter<'a,V>,
 }
 
 impl <'a, K: KeyType, V: ValueType> MultiMap<K,V> {
@@ -30,11 +29,11 @@ impl <'a, K: KeyType, V: ValueType> IntoIterator for &'a mut MultiMap<K,V> {
     fn into_iter(self) -> Self::IntoIter {
         let mut key_it = self.multi_map.iter().peekable();
         let value_it = match key_it.peek() {
-            Some(x) => &x.1.iter(),
-            None => &BTreeSet::new().iter()
+            Some(&(k,v)) => v.iter(),
+            None => empty::<btree_set::Iter<'a,V>>()
         };
 
-        return MultiMapIterator{key_it: key_it, value_it: value_it};
+        MultiMapIterator{key_it: key_it, value_it: value_it}
     }
 }
 
