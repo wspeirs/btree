@@ -27,12 +27,13 @@ const FILE_HEADER: &'static str = "B+Tree\0";
 const CURRENT_VERSION: u8 = 0x01;
 
 // specify the types for the keys & values
-pub trait KeyType: Ord + Encodable + Decodable {}
-pub trait ValueType: Ord + Encodable + Decodable {}
+pub trait KeyType: Ord + Encodable + Decodable + Copy + Clone {}
+pub trait ValueType: Ord + Encodable + Decodable + Copy + Clone  {}
 
 // provide generic implementations
-impl<T> KeyType for T where T: Ord + Encodable + Decodable {}
-impl<T> ValueType for T where T: Ord + Encodable + Decodable {}
+
+impl<T> KeyType for T where T: Ord + Encodable + Decodable + Copy + Clone {}
+impl<T> ValueType for T where T: Ord + Encodable + Decodable + Copy + Clone {}
 
 #[derive(RustcEncodable, RustcDecodable, PartialEq)]
 enum Payload<K: KeyType, V: ValueType> {
@@ -105,7 +106,7 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
         if metadata.len() == 0 {
             // write out our header
             try!(tree_file.write(FILE_HEADER.as_bytes()));
-            
+
             // write out our version
             try!(tree_file.write(&[CURRENT_VERSION]));
 
@@ -143,7 +144,7 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
                                 mem_tree: mem_tree
                 });
             }
-            
+
             // seek node_size in from the end of the file to read the root node
             try!(tree_file.seek(SeekFrom::End((node_size as isize * -1) as i64)));
             try!(tree_file.read_exact(&mut buff));
@@ -183,7 +184,7 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
 
         loop {
             let mem_item = mem_iter.next();
-            
+
         }
     }
 */
@@ -250,7 +251,7 @@ mod tests {
         let mut btree = BTree::<u8, u8>::new(file_path.to_owned(), 1, 1).unwrap();
 
         let len = btree.insert(2, 3).unwrap(); // insert into a new file
-        
+
         assert!(btree.wal_file.len().unwrap() == 2);
         assert!(btree.mem_tree.contains_key(&2));
 

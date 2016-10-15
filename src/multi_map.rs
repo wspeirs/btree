@@ -72,7 +72,6 @@ impl <'a, K: KeyType, V: ValueType> Iterator for MultiMapIterator<'a,K,V> {
             cur_val = self.value_it.as_mut().unwrap().next(); // set our current value
         }
 
-        return Some(KeyValuePair{key: self.cur_key.unwrap(), value: *(cur_val.unwrap())});
+        return Some(KeyValuePair{key: self.cur_key.unwrap().clone(), value: cur_val.unwrap().clone()});
     }
 }
-
