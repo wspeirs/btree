@@ -39,6 +39,22 @@ impl <'a, K: KeyType, V: ValueType> MultiMap<K,V> {
 
         return self.count;
     }
+
+    pub fn delete(&mut self, key: K, value: V) -> usize {
+        if let Some(set) = self.multi_map.get_mut(&key) {
+            if set.remove(&value) {
+                self.count -= 1;            
+            }
+
+/* NOT WORKING: cannot borrow `self.multi_map` as mutable more than once at a time [E0499]
+            if set.is_empty() {
+                self.multi_map.remove(&key);
+            }
+*/
+        }
+
+        return self.count;
+    }
 }
 
 impl <'a, K: KeyType, V: ValueType> IntoIterator for &'a mut MultiMap<K,V> {
