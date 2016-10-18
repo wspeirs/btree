@@ -104,9 +104,9 @@ mod tests {
     fn test_insert() {
         let mut mmap = MultiMap::<i32,String>::new();
 
-        mmap.insert(12, String::from("abc"));
-        mmap.insert(23, String::from("abc"));
-        mmap.insert(23, String::from("def"));
+        assert!(mmap.insert(12, String::from("abc")) == 1);
+        assert!(mmap.insert(23, String::from("abc")) == 2);
+        assert!(mmap.insert(23, String::from("def")) == 3);
 
         let mut it = mmap.into_iter();
 
