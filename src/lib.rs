@@ -27,13 +27,13 @@ const FILE_HEADER: &'static str = "B+Tree\0";
 const CURRENT_VERSION: u8 = 0x01;
 
 // specify the types for the keys & values
-pub trait KeyType: Ord + Encodable + Decodable + Copy + Clone {}
-pub trait ValueType: Ord + Encodable + Decodable + Copy + Clone  {}
+pub trait KeyType: Ord + Encodable + Decodable + Clone {}
+pub trait ValueType: Ord + Encodable + Decodable + Clone  {}
 
 // provide generic implementations
 
-impl<T> KeyType for T where T: Ord + Encodable + Decodable + Copy + Clone {}
-impl<T> ValueType for T where T: Ord + Encodable + Decodable + Copy + Clone {}
+impl<T> KeyType for T where T: Ord + Encodable + Decodable + Clone {}
+impl<T> ValueType for T where T: Ord + Encodable + Decodable + Clone {}
 
 #[derive(RustcEncodable, RustcDecodable, PartialEq)]
 enum Payload<K: KeyType, V: ValueType> {

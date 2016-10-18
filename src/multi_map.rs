@@ -8,7 +8,8 @@ use std::collections::btree_map;
 use std::collections::btree_set;
 
 pub struct MultiMap<K: KeyType, V: ValueType> {
-    multi_map: BTreeMap<K, BTreeSet<V>>
+    multi_map: BTreeMap<K, BTreeSet<V>>,
+    count: usize  // total number of KV pairs
 }
 
 pub struct MultiMapIterator<'a, K: KeyType + 'a, V: ValueType + 'a> {
@@ -19,7 +20,24 @@ pub struct MultiMapIterator<'a, K: KeyType + 'a, V: ValueType + 'a> {
 
 impl <'a, K: KeyType, V: ValueType> MultiMap<K,V> {
     pub fn new() -> MultiMap<K,V> {
-        return MultiMap{multi_map: BTreeMap::<K,BTreeSet<V>>::new()};
+        return MultiMap{multi_map: BTreeMap::<K,BTreeSet<V>>::new(), count: 0};
+    }
+
+    pub fn insert(&mut self, key: K, value: V) -> usize {
+        self.count += 1;
+
+        if let Some(set) = self.multi_map.get_mut(&key) {
+            set.insert(value);
+            return self.count;
+        }
+        
+        let mut set = BTreeSet::<V>::new();
+
+        set.insert(value);
+
+        self.multi_map.insert(key, set);
+
+        return self.count;
     }
 }
 
@@ -75,3 +93,35 @@ impl <'a, K: KeyType, V: ValueType> Iterator for MultiMapIterator<'a,K,V> {
         return Some(KeyValuePair{key: self.cur_key.unwrap().clone(), value: cur_val.unwrap().clone()});
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use multi_map::{MultiMap, MultiMapIterator};
+    use wal_file::KeyValuePair;
+
+    #[test]
+    fn test_insert() {
+        let mut mmap = MultiMap::<i32,String>::new();
+
+        mmap.insert(12, String::from("abc"));
+        mmap.insert(23, String::from("abc"));
+        mmap.insert(23, String::from("def"));
+
+        let mut it = mmap.into_iter();
+
+        let e1 = it.next().unwrap();
+        assert!(12 == e1.key);
+        assert!(String::from("abc") == e1.value);
+        
+        let e2 = it.next().unwrap();
+        assert!(23 == e2.key);
+        assert!(String::from("abc") == e2.value);
+        
+        let e3 = it.next().unwrap();
+        assert!(23 == e3.key);
+        assert!(String::from("def") == e3.value);
+    }
+}
+
+
