@@ -4,6 +4,8 @@ use wal_file::KeyValuePair;
 
 use std::iter::{Peekable, empty, Map};
 use std::collections::{BTreeMap, BTreeSet};
+use std::collections::btree_map::Entry;
+use std::collections::btree_map::Entry::{Occupied, Vacant};
 use std::collections::btree_map;
 use std::collections::btree_set;
 
@@ -41,18 +43,25 @@ impl <'a, K: KeyType, V: ValueType> MultiMap<K,V> {
     }
 
     pub fn delete(&mut self, key: K, value: V) -> usize {
-        if let Some(set) = self.multi_map.get_mut(&key) {
-            if set.remove(&value) {
+        if let Occupied(mut entry) = self.multi_map.entry(key) {
+
+            if entry.get_mut().remove(&value) {
                 self.count -= 1;            
+            } else {
+                println!("DID NOT FIND");
             }
 
-/* NOT WORKING: cannot borrow `self.multi_map` as mutable more than once at a time [E0499]
-            if set.is_empty() {
-                self.multi_map.remove(&key);
+            if entry.get().is_empty() {
+                entry.remove_entry();
             }
-*/
+        } else {
+            println!("NOT FOUND!!!");
         }
 
+        return self.count;
+    }
+
+    pub fn size(&self) -> usize {
         return self.count;
     }
 }
@@ -137,6 +146,28 @@ mod tests {
         let e3 = it.next().unwrap();
         assert!(23 == e3.key);
         assert!(String::from("def") == e3.value);
+    }
+
+    #[test]
+    fn test_delete() {
+        let mut mmap = MultiMap::<i32,String>::new();
+
+        assert!(mmap.insert(12, String::from("abc")) == 1);
+        assert!(mmap.insert(23, String::from("abc")) == 2);
+        assert!(mmap.insert(23, String::from("def")) == 3);
+
+        assert!(mmap.size() == 3);
+
+        assert!(mmap.delete(12, String::from("abc")) == 2);
+        assert!(mmap.delete(23, String::from("abc")) == 1);
+        assert!(mmap.delete(23, String::from("abc")) == 1); // should NOT find this one
+        assert!(mmap.delete(23, String::from("def")) == 0);
+
+        assert!(mmap.size() == 0);
+
+        let mut it = mmap.into_iter();
+
+        assert!(it.next() == None);
     }
 }
 
