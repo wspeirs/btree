@@ -42,20 +42,21 @@ impl <'a, K: KeyType, V: ValueType> MultiMap<K,V> {
         return self.count;
     }
 
+    /*
+     * Might want to re-think this and return an Error
+     * as there isn't a great way to tell the user that a
+     * key or value wasn't found
+     */
     pub fn delete(&mut self, key: K, value: V) -> usize {
         if let Occupied(mut entry) = self.multi_map.entry(key) {
 
             if entry.get_mut().remove(&value) {
                 self.count -= 1;            
-            } else {
-                println!("DID NOT FIND");
             }
 
             if entry.get().is_empty() {
                 entry.remove_entry();
             }
-        } else {
-            println!("NOT FOUND!!!");
         }
 
         return self.count;
