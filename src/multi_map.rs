@@ -2,12 +2,13 @@ use ::{KeyType, ValueType};
 
 use wal_file::KeyValuePair;
 
-use std::iter::{Peekable, empty, Map};
+use std::iter::{empty, Map};
 use std::collections::{BTreeMap, BTreeSet};
 use std::collections::btree_map::Entry;
 use std::collections::btree_map::Entry::{Occupied, Vacant};
 use std::collections::btree_map;
 use std::collections::btree_set;
+use std::collections::btree_set::Iter;
 
 pub struct MultiMap<K: KeyType, V: ValueType> {
     multi_map: BTreeMap<K, BTreeSet<V>>,
@@ -40,6 +41,15 @@ impl <'a, K: KeyType, V: ValueType> MultiMap<K,V> {
         self.multi_map.insert(key, set);
 
         return self.count;
+    }
+
+    /*
+     * It would be nice to return a "generic" iterator here
+     * not one tied to our underlying implementation. Not really
+     * sure how: https://goo.gl/9sisAb
+     */
+    pub fn get(&self, key: &K) -> Option<Iter<V>> {
+        return self.multi_map.get(key).map(|set| set.iter());
     }
 
     /*
@@ -147,6 +157,26 @@ mod tests {
         let e3 = it.next().unwrap();
         assert!(23 == e3.key);
         assert!(String::from("def") == e3.value);
+    }
+
+    #[test]
+    fn test_get() {
+        let mut mmap = MultiMap::<i32,String>::new();
+        
+        assert!(mmap.insert(12, String::from("abc")) == 1);
+        assert!(mmap.insert(23, String::from("abc")) == 2);
+        assert!(mmap.insert(23, String::from("def")) == 3);
+
+        let mut it1 = mmap.get(&12).unwrap();
+
+        assert!(it1.next().unwrap() == "abc");
+        assert!(it1.next() == None);
+
+        let mut it2 = mmap.get(&23).unwrap();
+
+        assert!(it2.next().unwrap() == "abc");
+        assert!(it2.next().unwrap() == "def");
+        assert!(it2.next() == None);
     }
 
     #[test]
