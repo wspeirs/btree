@@ -2,10 +2,8 @@ use ::{KeyType, ValueType};
 
 use wal_file::KeyValuePair;
 
-use std::iter::{empty, Map};
 use std::collections::{BTreeMap, BTreeSet};
-use std::collections::btree_map::Entry;
-use std::collections::btree_map::Entry::{Occupied, Vacant};
+use std::collections::btree_map::Entry::Occupied;
 use std::collections::btree_map;
 use std::collections::btree_set;
 use std::collections::btree_set::Iter;

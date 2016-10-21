@@ -1,6 +1,10 @@
 use wal_file::WALFile;
 
 /*
+const NUM_CHILDREN: usize = 32;
+const FILE_HEADER: &'static str = "B+Tree\0";
+const CURRENT_VERSION: u8 = 0x01;
+
 
 #[derive(RustcEncodable, RustcDecodable, PartialEq)]
 enum Payload<K: KeyType, V: ValueType> {

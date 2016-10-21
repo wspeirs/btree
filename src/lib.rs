@@ -10,23 +10,10 @@ use wal_file::{KeyValuePair, WALFile, WALIterator};
 use multi_map::{MultiMap, MultiMapIterator};
 use disk_btree::{OnDiskBTree};
 
-use bincode::SizeLimit;
-use bincode::rustc_serialize::{encode, decode};
 use rustc_serialize::{Encodable, Decodable};
 
-use std::cmp::max;
-use std::convert::From;
-use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
-use std::fs::File;
-use std::fs::OpenOptions;
-use std::io::{Read, Write, Seek, SeekFrom, ErrorKind};
-use std::mem::{size_of};
 use std::str;
-
-const NUM_CHILDREN: usize = 32;
-const FILE_HEADER: &'static str = "B+Tree\0";
-const CURRENT_VERSION: u8 = 0x01;
 
 // specify the types for the keys & values
 pub trait KeyType: Ord + Encodable + Decodable + Clone {}
@@ -66,7 +53,7 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
         }
 
         // open the data file
-        let mut tree_file = try!(OnDiskBTree::<K,V>::new(tree_file_path.to_owned(), max_key_size, max_value_size));
+        let tree_file = try!(OnDiskBTree::<K,V>::new(tree_file_path.to_owned(), max_key_size, max_value_size));
 
         return Ok(BTree{tree_file_path: tree_file_path,
                         max_key_size: max_key_size,
