@@ -175,6 +175,10 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
         Ok( () )
     }
 
+
+    pub fn get(&self, key: &K) -> Option<std::collections::btree_set::Iter<V>> {
+        self.mem_tree.get(key).map(|btree| btree.iter())
+    }
 /*
     /// Merges the records on disk with the records in memory
     fn compact(&mut self) -> Result<(), Box<Error>>{
@@ -197,7 +201,7 @@ mod tests {
     use std::fs::{OpenOptions, Metadata};
     use ::BTree;
     use rand::{thread_rng, Rng};
-
+    use std::collections::{BTreeMap, BTreeSet};
 
     pub fn gen_temp_name() -> String {
         let file_name: String = thread_rng().gen_ascii_chars().take(10).collect();
@@ -269,6 +273,27 @@ mod tests {
 
         assert!(! btree.wal_file.is_new().unwrap());
         assert!(btree.mem_tree.contains_key(&String::from("Hello")));
+
+        remove_files(file_path); // remove files assuming it all went well
+    }
+
+    #[test]
+    fn get_returns_an_iter() {
+        let file_path = gen_temp_name();
+
+        // setup tree
+        let mut btree = BTree::<String, String>::new(file_path.to_owned(), 15, 15).unwrap();
+
+        // expected return set
+        let mut expected: BTreeSet<String> = BTreeSet::new();
+        expected.insert("World".to_string());
+
+        btree.insert("Hello".to_owned(), "World".to_owned());
+
+        // get the set at the hello key
+        let set_at_hello: Vec<String> = btree.get(&"Hello".to_string()).unwrap().cloned().collect();
+
+        assert_eq!(set_at_hello, ["World".to_string()]);
 
         remove_files(file_path); // remove files assuming it all went well
     }
