@@ -1,4 +1,6 @@
-use wal_file::WALFile;
+use wal_file::{WALFile, WALIterator};
+
+use ::{KeyType, ValueType};
 
 /*
 const NUM_CHILDREN: usize = 32;
@@ -41,7 +43,15 @@ struct Node<K: KeyType, V: ValueType> {
 
 
 // total hack to get things going
-pub type OnDiskBTree<K,V> = WALFile<K,V>;
+pub trait OnDiskBTree<K: ?Sized, V: ?Sized> where K: KeyType, V: ValueType {
+    fn get(&self, key: &K) -> WALIterator<K,V>;
+}
+
+impl <K: KeyType + ?Sized, V: ValueType + ?Sized> OnDiskBTree<K,V> for WALFile<K,V> {
+    fn get(&self, key: &K) -> WALIterator<K,V> {
+        return self.into_iter().filter(|rec| rec.key == key);
+    }
+}
 
 /*
 

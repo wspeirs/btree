@@ -29,9 +29,9 @@ pub struct BTree<K: KeyType, V: ValueType> {
     tree_file_path: String,         // the path to the tree file
     max_key_size: usize,            // the max size of the key in bytes
     max_value_size: usize,          // the max size of the value in bytes
-    tree_file: OnDiskBTree<K,V>,    // the file backing the whole thing
     wal_file: WALFile<K,V>,         // write-ahead log for in-memory items
     mem_tree: MultiMap<K,V>,        // in-memory multi-map that gets merged with the on-disk BTree
+    tree_file: OnDiskBTree<K,V>,    // the file backing the whole thing
 }
 
 impl <K: KeyType, V: ValueType> BTree<K, V> {
@@ -52,8 +52,12 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
             }
         }
 
+
         // open the data file
         let tree_file = try!(OnDiskBTree::<K,V>::new(tree_file_path.to_owned(), max_key_size, max_value_size));
+
+        tree_file.get();
+        wal_file.get();
 
         return Ok(BTree{tree_file_path: tree_file_path,
                         max_key_size: max_key_size,
