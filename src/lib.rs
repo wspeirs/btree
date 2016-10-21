@@ -176,8 +176,8 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
     }
 
 
-    pub fn get(&self, key: &K) -> Option<&BTreeSet<V>> {
-        self.mem_tree.get(key)
+    pub fn get(&self, key: &K) -> Option<std::collections::btree_set::Iter<V>> {
+        self.mem_tree.get(key).map(|btree| btree.iter())
     }
 /*
     /// Merges the records on disk with the records in memory
@@ -201,7 +201,7 @@ mod tests {
     use std::fs::{OpenOptions, Metadata};
     use ::BTree;
     use rand::{thread_rng, Rng};
-    use std::collections::{BTreeSet};
+    use std::collections::{BTreeMap, BTreeSet};
 
     pub fn gen_temp_name() -> String {
         let file_name: String = thread_rng().gen_ascii_chars().take(10).collect();
@@ -278,7 +278,7 @@ mod tests {
     }
 
     #[test]
-    fn get_returns_a_set() {
+    fn get_returns_an_iter() {
         let file_path = gen_temp_name();
 
         // setup tree
@@ -291,9 +291,9 @@ mod tests {
         btree.insert("Hello".to_owned(), "World".to_owned());
 
         // get the set at the hello key
-        let set_at_hello: &BTreeSet<String> = btree.get(&"Hello".to_string()).unwrap();
+        let set_at_hello: Vec<String> = btree.get(&"Hello".to_string()).unwrap().cloned().collect();
 
-        assert_eq!(&expected, set_at_hello);
+        assert_eq!(set_at_hello, ["World".to_string()]);
 
         remove_files(file_path); // remove files assuming it all went well
     }
