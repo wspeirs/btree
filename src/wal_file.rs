@@ -69,6 +69,7 @@ impl <K: KeyType, V: ValueType> WALFile<K,V> {
     }
 }
 
+
 impl <'a, K: KeyType, V: ValueType> IntoIterator for &'a mut WALFile<K,V> {
     type Item = KeyValuePair<K,V>;
     type IntoIter = WALIterator<'a, K,V>;
