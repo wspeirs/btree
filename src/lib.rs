@@ -15,6 +15,8 @@ use rustc_serialize::{Encodable, Decodable};
 use std::error::Error;
 use std::str;
 
+const MAX_MEMORY_ITEMS = 1000;
+
 // specify the types for the keys & values
 pub trait KeyType: Ord + Encodable + Decodable + Clone {}
 pub trait ValueType: Ord + Encodable + Decodable + Clone  {}
@@ -56,8 +58,6 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
         // open the data file
         let tree_file = Box::new(try!(WALFile::<K,V>::new(tree_file_path.to_owned(), max_key_size, max_value_size)));
 
-        tree_file.get();
-
         return Ok(BTree{tree_file_path: tree_file_path,
                         max_key_size: max_key_size,
                         max_value_size: max_value_size,
@@ -70,28 +70,33 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
     pub fn insert(&mut self, key: K, value: V) -> Result<(), Box<Error>> {
         let record = KeyValuePair{key: key, value: value};
 
+        // should wrap this in a read-write lock
         try!(self.wal_file.write_record(&record));
 
         let KeyValuePair{key, value} = record;
 
-        self.mem_tree.insert(key, value);
+        let size = self.mem_tree.insert(key, value);
 
-        Ok( () )
+        if size > MAX_MEMORY_ITEMS {
+            try!(self.compact());
+        }
+
+        return Ok( () );
     }
 
-/*
     /// Merges the records on disk with the records in memory
     fn compact(&mut self) -> Result<(), Box<Error>>{
-        let mut new_tree_file = try!(OpenOptions::new().read(true).write(true).create(true).truncate(true).open(self.tree_file_path + ".new"));
+        // create a new on-disk BTree
+        let mut new_tree_file = try!(WALFile::<K,V>::new(self.tree_file_path + ".new"));
 
-        let mut mem_iter = self.mem_tree.iter().fuse();  // get an iterator that always returns None when done
+        // get an iterator for the in-memory items
+        let mut mem_iter = self.mem_tree.into_iter();
 
         loop {
             let mem_item = mem_iter.next();
 
         }
     }
-*/
 }
 
 
