@@ -45,17 +45,14 @@ struct Node<K: KeyType, V: ValueType> {
 
 // total hack to get things going
 pub trait OnDiskBTree<K: ?Sized, V: ?Sized> where K: KeyType, V: ValueType {
-    // fn get(&self, key: &K) -> Box<Filter<WALIterator<K,V>, fn(KeyValuePair<K,V>) -> bool>>;
+    fn get(&self, key: &K) -> Box<Filter<WALIterator<K,V>, fn(KeyValuePair<K,V>) -> bool>>;
 }
 
 
 impl <K: KeyType + ?Sized, V: ValueType + ?Sized> OnDiskBTree<K,V> for WALFile<K,V> {
-/*
     fn get(&self, key: &K) -> Box<Filter<WALIterator<K,V>, fn(KeyValuePair<K,V>) -> bool>> {
         return Box::new(self.into_iter().filter(|rec| &rec.key == key));
     }
-*/
-
 }
 
 /*

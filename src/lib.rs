@@ -54,7 +54,7 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
 
 
         // open the data file
-        let tree_file = Box::new(try!(OnDiskBTree::<K,V>::new(tree_file_path.to_owned(), max_key_size, max_value_size)));
+        let tree_file = Box::new(try!(WALFile::<K,V>::new(tree_file_path.to_owned(), max_key_size, max_value_size)));
 
         tree_file.get();
 
