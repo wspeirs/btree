@@ -18,38 +18,51 @@ pub struct KeyValuePair<K: KeyType, V: ValueType> {
     pub value: V,
 }
 
-pub struct WALFile<K: KeyType, V: ValueType> {
-    fd: File,  // the WAL file
+pub struct RecordFile<K: KeyType, V: ValueType> {
+    fd: File,  // the file
     key_size: usize,
     value_size: usize,
     _k_marker: PhantomData<K>,
     _v_marker: PhantomData<V>
 }
 
-pub struct WALIterator<'a, K: KeyType + 'a, V: ValueType + 'a> {
-    wal_file: &'a mut WALFile<K,V>,  // the WAL file
+pub struct RecordFileIterator<'a, K: KeyType + 'a, V: ValueType + 'a> {
+    wal_file: &'a mut RecordFile<K,V>,  // the file
 }
 
-impl <K: KeyType, V: ValueType> WALFile<K,V> {
-    pub fn new(wal_file_path: String, key_size: usize, value_size: usize) -> Result<WALFile<K,V>, Box<Error>> {
+/// The methods that describe a Write-ahead Log
+pub trait WAL<K: KeyType,V: ValueType>: IntoIterator {
+    /// Returns true if the log is new/empty
+    fn is_new(&self) -> Result<bool, Box<Error>>;
+
+    /// Returns the length (in records) of the log
+    fn len(&self) -> Result<u64, Box<Error>>;
+
+    fn insert_record(&mut self, kv: &KeyValuePair<K,V>) -> Result<(), Box<Error>>;
+}
+
+impl <K: KeyType, V: ValueType> RecordFile<K,V> {
+    pub fn new(wal_file_path: String, key_size: usize, value_size: usize) -> Result<RecordFile<K,V>, Box<Error>> {
         let wal_file = try!(OpenOptions::new().read(true).write(true).create(true).open(wal_file_path));
 
-        return Ok(WALFile{fd: wal_file,
+        return Ok(RecordFile{fd: wal_file,
                           key_size: key_size,
                           value_size: value_size,
                           _k_marker: PhantomData,
                           _v_marker: PhantomData});
     }
+}
 
-    pub fn is_new(&self) -> Result<bool, Box<Error>> {
+impl <K: KeyType, V: ValueType> WAL<K,V> for RecordFile<K,V> {
+    fn is_new(&self) -> Result<bool, Box<Error>> {
         Ok(try!(self.fd.metadata()).len() == 0)
     }
 
-    pub fn len(&self) -> Result<u64, Box<Error>> {
+    fn len(&self) -> Result<u64, Box<Error>> {
         Ok(try!(self.fd.metadata()).len())
     }
 
-    pub fn write_record(&mut self, kv: &KeyValuePair<K,V>) -> Result<(), Box<Error>> {
+    fn insert_record(&mut self, kv: &KeyValuePair<K,V>) -> Result<(), Box<Error>> {
         // encode the record
         let record_size = self.key_size + self.value_size;
         let mut buff = try!(encode(&kv, SizeLimit::Bounded(record_size as u64)));
@@ -69,21 +82,20 @@ impl <K: KeyType, V: ValueType> WALFile<K,V> {
     }
 }
 
-
-impl <'a, K: KeyType, V: ValueType> IntoIterator for &'a mut WALFile<K,V> {
+impl <'a, K: KeyType, V: ValueType> IntoIterator for &'a mut RecordFile<K,V> {
     type Item = KeyValuePair<K,V>;
-    type IntoIter = WALIterator<'a, K,V>;
+    type IntoIter = RecordFileIterator<'a, K,V>;
 
     fn into_iter(self) -> Self::IntoIter {
         // seek back to the start
         self.fd.seek(SeekFrom::Start(0));
 
         // create our iterator
-        WALIterator{wal_file: self}
+        RecordFileIterator{wal_file: self}
     }
 }
 
-impl <'a, K: KeyType, V: ValueType> Iterator for WALIterator<'a,K,V> {
+impl <'a, K: KeyType, V: ValueType> Iterator for RecordFileIterator<'a,K,V> {
     type Item = KeyValuePair<K,V>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -114,7 +126,7 @@ mod tests {
     use tests::gen_temp_name;
     use std::fs;
     use std::fs::OpenOptions;
-    use wal_file::{WALFile, KeyValuePair};
+    use wal_file::{RecordFile, KeyValuePair};
 
     #[test]
     fn test_iterator() {
@@ -124,7 +136,7 @@ mod tests {
         // create a new blank file
         OpenOptions::new().read(true).write(true).truncate(true).create(true).open(&file_path);
 
-        let mut wal_file = WALFile::new(file_path, 20, 20).unwrap();
+        let mut wal_file = RecordFile::new(file_path, 20, 20).unwrap();
 
         let kv1 = KeyValuePair{key: "hello".to_owned(), value: "world".to_owned()};
         let kv2 = KeyValuePair{key: "foo".to_owned(), value: "bar".to_owned()};

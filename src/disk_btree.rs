@@ -1,4 +1,4 @@
-use wal_file::{WALFile, WALIterator, KeyValuePair};
+use wal_file::{WAL, RecordFileIterator, KeyValuePair};
 
 use ::{KeyType, ValueType};
 use std::iter::Filter;
@@ -44,12 +44,12 @@ struct Node<K: KeyType, V: ValueType> {
 
 
 // total hack to get things going
-pub trait OnDiskBTree<K: ?Sized, V: ?Sized> where K: KeyType, V: ValueType {
+pub trait OnDiskBTree<K: KeyType, V: ValueType>: WAL<K,V> where IntoIter<Item=KeyValuePair<K,V>> {
     // fn get(&self, key: &K) -> Box<Filter<WALIterator<K,V>, fn(KeyValuePair<K,V>) -> bool>>;
 }
 
 
-impl <K: KeyType + ?Sized, V: ValueType + ?Sized> OnDiskBTree<K,V> for WALFile<K,V> {
+impl <K: KeyType, V: ValueType> OnDiskBTree<K,V> for WAL<K,V> {
     // fn get(&self, key: &K) -> Box<Filter<WALIterator<K,V>, fn(KeyValuePair<K,V>) -> bool>> {
     //     return Box::new(self.into_iter().filter(|rec| &rec.key == key));
     // }
