@@ -44,17 +44,17 @@ struct Node<K: KeyType, V: ValueType> {
 
 
 // total hack to get things going
-pub trait OnDiskBTree<K: KeyType, V: ValueType>: WAL<K,V> where IntoIter<Item=KeyValuePair<K,V>> {
+pub trait OnDiskBTree<K: KeyType, V: ValueType> {
     // fn get(&self, key: &K) -> Box<Filter<WALIterator<K,V>, fn(KeyValuePair<K,V>) -> bool>>;
 }
 
-
+/*
 impl <K: KeyType, V: ValueType> OnDiskBTree<K,V> for WAL<K,V> {
     // fn get(&self, key: &K) -> Box<Filter<WALIterator<K,V>, fn(KeyValuePair<K,V>) -> bool>> {
     //     return Box::new(self.into_iter().filter(|rec| &rec.key == key));
     // }
 }
-
+*/
 /*
 
         // check to see if this is a new file

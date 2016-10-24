@@ -38,6 +38,7 @@ pub trait WAL<K: KeyType,V: ValueType>: IntoIterator {
     /// Returns the length (in records) of the log
     fn len(&self) -> Result<u64, Box<Error>>;
 
+    /// Inserts a record into the log
     fn insert_record(&mut self, kv: &KeyValuePair<K,V>) -> Result<(), Box<Error>>;
 }
 

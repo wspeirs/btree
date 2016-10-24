@@ -26,12 +26,14 @@ pub trait ValueType: Ord + Encodable + Decodable + Clone  {}
 impl<T> KeyType for T where T: Ord + Encodable + Decodable + Clone {}
 impl<T> ValueType for T where T: Ord + Encodable + Decodable + Clone {}
 
+type WALFile<'a,K,V> = WAL<K,V,IntoIter=RecordFileIterator<'a, K,V>,Item=KeyValuePair<K,V>>;
+
 /// This struct holds all the pieces of the BTree mechanism
 pub struct BTree<K: KeyType, V: ValueType> {
     tree_file_path: String,         // the path to the tree file
     max_key_size: usize,            // the max size of the key in bytes
     max_value_size: usize,          // the max size of the value in bytes
-    wal_file: WAL<K,V>,         // write-ahead log for in-memory items
+    wal_file: WALFile<K,V>,         // write-ahead log for in-memory items
     mem_tree: MultiMap<K,V>,        // in-memory multi-map that gets merged with the on-disk BTree
     tree_file: Box<OnDiskBTree<K,V>>,    // the file backing the whole thing
 }
