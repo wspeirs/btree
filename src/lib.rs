@@ -6,7 +6,7 @@ mod wal_file;
 mod multi_map;
 mod disk_btree;
 
-use wal_file::{KeyValuePair, WAL, RecordFileIterator};
+use wal_file::{KeyValuePair, WAL, RecordFile, RecordFileIterator};
 use multi_map::{MultiMap, MultiMapIterator};
 use disk_btree::{OnDiskBTree};
 
@@ -26,14 +26,12 @@ pub trait ValueType: Ord + Encodable + Decodable + Clone  {}
 impl<T> KeyType for T where T: Ord + Encodable + Decodable + Clone {}
 impl<T> ValueType for T where T: Ord + Encodable + Decodable + Clone {}
 
-type WALFile<'a,K,V> = WAL<K,V,IntoIter=RecordFileIterator<'a, K,V>,Item=KeyValuePair<K,V>>;
-
 /// This struct holds all the pieces of the BTree mechanism
 pub struct BTree<K: KeyType, V: ValueType> {
     tree_file_path: String,         // the path to the tree file
     max_key_size: usize,            // the max size of the key in bytes
     max_value_size: usize,          // the max size of the value in bytes
-    wal_file: WALFile<K,V>,         // write-ahead log for in-memory items
+    wal_file: Box<WAL<K,V>>,         // write-ahead log for in-memory items
     mem_tree: MultiMap<K,V>,        // in-memory multi-map that gets merged with the on-disk BTree
     tree_file: Box<OnDiskBTree<K,V>>,    // the file backing the whole thing
 }
@@ -47,7 +45,7 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
         let wal_file_path = tree_file_path.to_owned() + ".wal";
 
         // construct our WAL file
-        let mut wal_file = try!(WAL::<K,V>::new(wal_file_path.to_owned(), max_key_size, max_value_size));
+        let mut wal_file = Box::new(try!(RecordFile::<K,V>::new(wal_file_path.to_owned(), max_key_size, max_value_size)));
 
         // if we have a WAL file, replay it into the mem_tree
         if try!(wal_file.is_new()) {

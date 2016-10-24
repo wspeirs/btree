@@ -31,7 +31,9 @@ pub struct RecordFileIterator<'a, K: KeyType + 'a, V: ValueType + 'a> {
 }
 
 /// The methods that describe a Write-ahead Log
-pub trait WAL<K: KeyType,V: ValueType>: IntoIterator {
+pub trait WAL<K: KeyType,V: ValueType> {
+    fn new(wal_file_path: String, key_size: usize, value_size: usize) -> Result<RecordFile<K,V>, Box<Error>>;
+
     /// Returns true if the log is new/empty
     fn is_new(&self) -> Result<bool, Box<Error>>;
 
@@ -42,6 +44,7 @@ pub trait WAL<K: KeyType,V: ValueType>: IntoIterator {
     fn insert_record(&mut self, kv: &KeyValuePair<K,V>) -> Result<(), Box<Error>>;
 }
 
+/*
 impl <K: KeyType, V: ValueType> RecordFile<K,V> {
     pub fn new(wal_file_path: String, key_size: usize, value_size: usize) -> Result<RecordFile<K,V>, Box<Error>> {
         let wal_file = try!(OpenOptions::new().read(true).write(true).create(true).open(wal_file_path));
@@ -53,8 +56,19 @@ impl <K: KeyType, V: ValueType> RecordFile<K,V> {
                           _v_marker: PhantomData});
     }
 }
+*/
 
 impl <K: KeyType, V: ValueType> WAL<K,V> for RecordFile<K,V> {
+    fn new(wal_file_path: String, key_size: usize, value_size: usize) -> Result<RecordFile<K,V>, Box<Error>> {
+        let wal_file = try!(OpenOptions::new().read(true).write(true).create(true).open(wal_file_path));
+
+        return Ok(RecordFile{fd: wal_file,
+                          key_size: key_size,
+                          value_size: value_size,
+                          _k_marker: PhantomData,
+                          _v_marker: PhantomData});
+    }
+
     fn is_new(&self) -> Result<bool, Box<Error>> {
         Ok(try!(self.fd.metadata()).len() == 0)
     }
