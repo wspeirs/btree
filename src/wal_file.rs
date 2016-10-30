@@ -11,11 +11,22 @@ use std::fs::{File, OpenOptions};
 use std::io::{Read, Write, ErrorKind, Seek, SeekFrom};
 use std::io::Error as IOError;
 use std::marker::PhantomData;
+use std::cmp::Ordering;
 
 #[derive(RustcEncodable, RustcDecodable, PartialEq)]
 pub struct KeyValuePair<K: KeyType, V: ValueType> {
     pub key: K,
     pub value: V,
+}
+
+impl <K: KeyType, V: ValueType> PartialOrd for KeyValuePair<K,V> {
+    fn partial_cmp(&self, other: &KeyValuePair<K,V>) -> Option<Ordering> {
+        if self.key == other.key {
+            Some(self.value.cmp(&other.value))
+        } else {
+            Some(self.key.cmp(&other.key))
+        }
+    }
 }
 
 pub struct RecordFile<K: KeyType, V: ValueType> {
@@ -30,24 +41,8 @@ pub struct RecordFileIterator<'a, K: KeyType + 'a, V: ValueType + 'a> {
     wal_file: &'a mut RecordFile<K,V>,  // the file
 }
 
-/*
-/// The methods that describe a Write-ahead Log
-pub trait WAL<K: KeyType,V: ValueType> {
-    fn new(wal_file_path: String, key_size: usize, value_size: usize) -> Result<RecordFile<K,V>, Box<Error>>;
-
-    /// Returns true if the log is new/empty
-    fn is_new(&self) -> Result<bool, Box<Error>>;
-
-    /// Returns the length (in records) of the log
-    fn len(&self) -> Result<u64, Box<Error>>;
-
-    /// Inserts a record into the log
-    fn insert_record(&mut self, kv: &KeyValuePair<K,V>) -> Result<(), Box<Error>>;
-}
-*/
-
 impl <K: KeyType, V: ValueType> RecordFile<K,V> {
-    pub fn new(wal_file_path: String, key_size: usize, value_size: usize) -> Result<RecordFile<K,V>, Box<Error>> {
+    pub fn new(wal_file_path: &String, key_size: usize, value_size: usize) -> Result<RecordFile<K,V>, Box<Error>> {
         let wal_file = try!(OpenOptions::new().read(true).write(true).create(true).open(wal_file_path));
 
         return Ok(RecordFile{fd: wal_file,
@@ -137,9 +132,7 @@ mod tests {
         let file_path = temp_path.to_owned() + ".wal";
 
         // create a new blank file
-        OpenOptions::new().read(true).write(true).truncate(true).create(true).open(&file_path);
-
-        let mut wal_file = RecordFile::new(file_path, 20, 20).unwrap();
+        let mut wal_file = RecordFile::new(&file_path, 20, 20).unwrap();
 
         let kv1 = KeyValuePair{key: "hello".to_owned(), value: "world".to_owned()};
         let kv2 = KeyValuePair{key: "foo".to_owned(), value: "bar".to_owned()};
@@ -158,5 +151,7 @@ mod tests {
 
         assert!(kv2.key == it_kv2.key);
         assert!(kv2.value == it_kv2.value);
+
+        fs::remove_file(&file_path);
     }
 }

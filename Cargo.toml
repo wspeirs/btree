@@ -7,3 +7,4 @@ authors = ["William Speirs <bill.speirs@gmail.com>"]
 rand = "*"
 bincode = "0.6.0"
 rustc-serialize = "0.3.19"
+itertools = "0.5.5"

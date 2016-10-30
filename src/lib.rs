@@ -1,19 +1,20 @@
 extern crate bincode;
 extern crate rustc_serialize;
 extern crate rand;
+extern crate itertools;
 
 mod wal_file;
 mod multi_map;
 mod disk_btree;
 
-use wal_file::{KeyValuePair, RecordFile, RecordFileIterator};
-use multi_map::{MultiMap, MultiMapIterator};
-use disk_btree::{OnDiskBTree};
+use wal_file::{KeyValuePair, RecordFile};
+use multi_map::MultiMap;
+use disk_btree::OnDiskBTree;
 
 use rustc_serialize::{Encodable, Decodable};
 
 use std::error::Error;
-use std::str;
+use itertools::merge;
 
 const MAX_MEMORY_ITEMS: usize = 1000;
 
@@ -45,7 +46,7 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
         let wal_file_path = tree_file_path.to_owned() + ".wal";
 
         // construct our WAL file
-        let mut wal_file = try!(RecordFile::<K,V>::new(wal_file_path.to_owned(), max_key_size, max_value_size));
+        let mut wal_file = try!(RecordFile::<K,V>::new(&wal_file_path, max_key_size, max_value_size));
 
         // if we have a WAL file, replay it into the mem_tree
         if try!(wal_file.is_new()) {
@@ -94,26 +95,28 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
         let mut new_tree_file = try!(OnDiskBTree::<K,V>::new(self.tree_file_path.to_owned() + ".new", self.max_key_size, self.max_value_size));
 
         // get an iterator for the in-memory items
-        let mut mem_iter = self.mem_tree.into_iter();
+        let mem_iter = self.mem_tree.into_iter();
 
         // get an iterator to the on-disk items
-        let mut disk_iter = self.tree_file.into_iter();
+        let disk_iter = self.tree_file.into_iter();
 
-        loop {
-            let mem_item = mem_iter.next();
-
+        for kv in merge(mem_iter, disk_iter) {
+            try!(new_tree_file.insert_record(&kv));
         }
+
+        Ok( () )
     }
 }
 
 
 #[cfg(test)]
+#[allow(unused_must_use)]
 mod tests {
     use std::fs;
-    use std::fs::{OpenOptions, Metadata};
+    use std::fs::OpenOptions;
     use ::BTree;
     use rand::{thread_rng, Rng};
-    use std::collections::{BTreeMap, BTreeSet};
+    use std::collections::BTreeSet;
 
     pub fn gen_temp_name() -> String {
         let file_name: String = thread_rng().gen_ascii_chars().take(10).collect();
@@ -165,7 +168,7 @@ mod tests {
 
         let mut btree = BTree::<u8, u8>::new(file_path.to_owned(), 1, 1).unwrap();
 
-        let len = btree.insert(2, 3).unwrap(); // insert into a new file
+        btree.insert(2, 3).unwrap(); // insert into a new file
 
         assert!(btree.wal_file.len().unwrap() == 2);
         assert!(btree.mem_tree.contains_key(&2));

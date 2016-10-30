@@ -138,8 +138,7 @@ impl <'a, K: KeyType, V: ValueType> Iterator for MultiMapIterator<'a,K,V> {
 
 #[cfg(test)]
 mod tests {
-    use multi_map::{MultiMap, MultiMapIterator};
-    use wal_file::KeyValuePair;
+    use multi_map::MultiMap;
 
     #[test]
     fn test_insert() {
