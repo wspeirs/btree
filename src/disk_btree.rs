@@ -64,8 +64,9 @@ impl <K: KeyType, V: ValueType> OnDiskBTree<K,V> {
         return self.file.is_new();
     }
 
-    pub fn len(&self) -> Result<u64, Box<Error>> {
-        return self.file.len();
+    /// Returns the number of records in the B+Tree
+    pub fn count(&self) -> Result<u64, Box<Error>> {
+        return self.file.count();
     }
 
     pub fn insert_record(&mut self, kv: &KeyValuePair<K,V>) -> Result<(), Box<Error>> {

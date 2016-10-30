@@ -56,8 +56,16 @@ impl <K: KeyType, V: ValueType> RecordFile<K,V> {
         Ok(try!(self.fd.metadata()).len() == 0)
     }
 
-    pub fn len(&self) -> Result<u64, Box<Error>> {
-        Ok(try!(self.fd.metadata()).len())
+    /// Returns the number of records in the WAL file
+    pub fn count(&self) -> Result<u64, Box<Error>> {
+        let file_size = try!(self.fd.metadata()).len();
+        let rec_size: u64 = (self.key_size + self.value_size) as u64;
+
+        if file_size % rec_size != 0 {
+            Err(From::from(IOError::new(ErrorKind::InvalidData, "File size is NOT a multiple of key size + value size")))
+        } else {
+            Ok(file_size/rec_size)
+        }
     }
 
     pub fn insert_record(&mut self, kv: &KeyValuePair<K,V>) -> Result<(), Box<Error>> {
@@ -123,7 +131,6 @@ impl <'a, K: KeyType, V: ValueType> Iterator for RecordFileIterator<'a,K,V> {
 mod tests {
     use tests::gen_temp_name;
     use std::fs;
-    use std::fs::OpenOptions;
     use wal_file::{RecordFile, KeyValuePair};
 
     #[test]
@@ -139,6 +146,8 @@ mod tests {
 
         wal_file.insert_record(&kv1).unwrap();
         wal_file.insert_record(&kv2).unwrap();
+
+        assert!(wal_file.count() == 2);
 
         let mut wal_it = wal_file.into_iter();
 
