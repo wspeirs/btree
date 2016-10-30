@@ -30,6 +30,7 @@ pub struct RecordFileIterator<'a, K: KeyType + 'a, V: ValueType + 'a> {
     wal_file: &'a mut RecordFile<K,V>,  // the file
 }
 
+/*
 /// The methods that describe a Write-ahead Log
 pub trait WAL<K: KeyType,V: ValueType> {
     fn new(wal_file_path: String, key_size: usize, value_size: usize) -> Result<RecordFile<K,V>, Box<Error>>;
@@ -43,8 +44,8 @@ pub trait WAL<K: KeyType,V: ValueType> {
     /// Inserts a record into the log
     fn insert_record(&mut self, kv: &KeyValuePair<K,V>) -> Result<(), Box<Error>>;
 }
+*/
 
-/*
 impl <K: KeyType, V: ValueType> RecordFile<K,V> {
     pub fn new(wal_file_path: String, key_size: usize, value_size: usize) -> Result<RecordFile<K,V>, Box<Error>> {
         let wal_file = try!(OpenOptions::new().read(true).write(true).create(true).open(wal_file_path));
@@ -55,29 +56,16 @@ impl <K: KeyType, V: ValueType> RecordFile<K,V> {
                           _k_marker: PhantomData,
                           _v_marker: PhantomData});
     }
-}
-*/
 
-impl <K: KeyType, V: ValueType> WAL<K,V> for RecordFile<K,V> {
-    fn new(wal_file_path: String, key_size: usize, value_size: usize) -> Result<RecordFile<K,V>, Box<Error>> {
-        let wal_file = try!(OpenOptions::new().read(true).write(true).create(true).open(wal_file_path));
-
-        return Ok(RecordFile{fd: wal_file,
-                          key_size: key_size,
-                          value_size: value_size,
-                          _k_marker: PhantomData,
-                          _v_marker: PhantomData});
-    }
-
-    fn is_new(&self) -> Result<bool, Box<Error>> {
+    pub fn is_new(&self) -> Result<bool, Box<Error>> {
         Ok(try!(self.fd.metadata()).len() == 0)
     }
 
-    fn len(&self) -> Result<u64, Box<Error>> {
+    pub fn len(&self) -> Result<u64, Box<Error>> {
         Ok(try!(self.fd.metadata()).len())
     }
 
-    fn insert_record(&mut self, kv: &KeyValuePair<K,V>) -> Result<(), Box<Error>> {
+    pub fn insert_record(&mut self, kv: &KeyValuePair<K,V>) -> Result<(), Box<Error>> {
         // encode the record
         let record_size = self.key_size + self.value_size;
         let mut buff = try!(encode(&kv, SizeLimit::Bounded(record_size as u64)));
@@ -156,8 +144,8 @@ mod tests {
         let kv1 = KeyValuePair{key: "hello".to_owned(), value: "world".to_owned()};
         let kv2 = KeyValuePair{key: "foo".to_owned(), value: "bar".to_owned()};
 
-        wal_file.write_record(&kv1).unwrap();
-        wal_file.write_record(&kv2).unwrap();
+        wal_file.insert_record(&kv1).unwrap();
+        wal_file.insert_record(&kv2).unwrap();
 
         let mut wal_it = wal_file.into_iter();
 

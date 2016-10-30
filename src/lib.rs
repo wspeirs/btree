@@ -6,7 +6,7 @@ mod wal_file;
 mod multi_map;
 mod disk_btree;
 
-use wal_file::{KeyValuePair, WAL, RecordFile, RecordFileIterator};
+use wal_file::{KeyValuePair, RecordFile, RecordFileIterator};
 use multi_map::{MultiMap, MultiMapIterator};
 use disk_btree::{OnDiskBTree};
 
@@ -31,9 +31,9 @@ pub struct BTree<K: KeyType, V: ValueType> {
     tree_file_path: String,         // the path to the tree file
     max_key_size: usize,            // the max size of the key in bytes
     max_value_size: usize,          // the max size of the value in bytes
-    wal_file: Box<WAL<K,V>>,         // write-ahead log for in-memory items
+    wal_file: RecordFile<K,V>,         // write-ahead log for in-memory items
     mem_tree: MultiMap<K,V>,        // in-memory multi-map that gets merged with the on-disk BTree
-    tree_file: Box<OnDiskBTree<K,V>>,    // the file backing the whole thing
+    tree_file: OnDiskBTree<K,V>,    // the file backing the whole thing
 }
 
 impl <K: KeyType, V: ValueType> BTree<K, V> {
@@ -45,7 +45,7 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
         let wal_file_path = tree_file_path.to_owned() + ".wal";
 
         // construct our WAL file
-        let mut wal_file = Box::new(try!(RecordFile::<K,V>::new(wal_file_path.to_owned(), max_key_size, max_value_size)));
+        let mut wal_file = try!(RecordFile::<K,V>::new(wal_file_path.to_owned(), max_key_size, max_value_size));
 
         // if we have a WAL file, replay it into the mem_tree
         if try!(wal_file.is_new()) {
@@ -54,9 +54,8 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
             }
         }
 
-
         // open the data file
-        let tree_file = Box::new(try!(WAL::<K,V>::new(tree_file_path.to_owned(), max_key_size, max_value_size)));
+        let tree_file = try!(OnDiskBTree::<K,V>::new(tree_file_path.to_owned(), max_key_size, max_value_size));
 
         return Ok(BTree{tree_file_path: tree_file_path,
                         max_key_size: max_key_size,
@@ -71,7 +70,7 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
         let record = KeyValuePair{key: key, value: value};
 
         // should wrap this in a read-write lock
-        try!(self.wal_file.write_record(&record));
+        try!(self.wal_file.insert_record(&record));
 
         let KeyValuePair{key, value} = record;
 
@@ -86,12 +85,13 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
 
 
     pub fn get(&self, key: &K) -> Option<std::collections::btree_set::Iter<V>> {
-        self.mem_tree.get(key).map(|btree| btree.iter())
+        self.mem_tree.get(key).map(|btree| btree)
     }
+
     /// Merges the records on disk with the records in memory
     fn compact(&mut self) -> Result<(), Box<Error>>{
         // create a new on-disk BTree
-        let mut new_tree_file = try!(WAL::<K,V>::new(self.tree_file_path + ".new", self.max_key_size, self.max_value_size));
+        let mut new_tree_file = try!(OnDiskBTree::<K,V>::new(self.tree_file_path.to_owned() + ".new", self.max_key_size, self.max_value_size));
 
         // get an iterator for the in-memory items
         let mut mem_iter = self.mem_tree.into_iter();
@@ -126,7 +126,6 @@ mod tests {
         fs::remove_file(file_path + ".wal");
     }
 
-
     #[test]
     fn new_blank_file() {
         let file_path = gen_temp_name();
@@ -154,7 +153,7 @@ mod tests {
         let btree = BTree::<u8, u8>::new(file_path.to_owned(), 1, 1).unwrap();
 
         // check our file lengths from the struct
-        assert!(btree.tree_file.metadata().unwrap().len() == 8);
+        assert!(btree.tree_file.len().unwrap() == 8);
         assert!(btree.wal_file.len().unwrap() == 0);
 
         remove_files(file_path); // remove files assuming it all went well

@@ -50,6 +50,13 @@ impl <'a, K: KeyType, V: ValueType> MultiMap<K,V> {
         return self.multi_map.get(key).map(|set| set.iter());
     }
 
+    pub fn contains_key(&self, key: &K) -> bool {
+        match self.get(key) {
+            Some(_) => true,
+            None => false
+        }
+    }
+
     /*
      * Might want to re-think this and return an Error
      * as there isn't a great way to tell the user that a
