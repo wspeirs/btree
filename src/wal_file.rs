@@ -141,13 +141,15 @@ mod tests {
         // create a new blank file
         let mut wal_file = RecordFile::new(&file_path, 20, 20).unwrap();
 
+        assert!(wal_file.is_new().unwrap());
+
         let kv1 = KeyValuePair{key: "hello".to_owned(), value: "world".to_owned()};
         let kv2 = KeyValuePair{key: "foo".to_owned(), value: "bar".to_owned()};
 
         wal_file.insert_record(&kv1).unwrap();
         wal_file.insert_record(&kv2).unwrap();
 
-        assert!(wal_file.count() == 2);
+        assert!(wal_file.count().unwrap() == 2);
 
         let mut wal_it = wal_file.into_iter();
 

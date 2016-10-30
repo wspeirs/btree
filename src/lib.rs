@@ -29,16 +29,16 @@ impl<T> ValueType for T where T: Ord + Encodable + Decodable + Clone {}
 
 /// This struct holds all the pieces of the BTree mechanism
 pub struct BTree<K: KeyType, V: ValueType> {
-    tree_file_path: String,         // the path to the tree file
-    max_key_size: usize,            // the max size of the key in bytes
-    max_value_size: usize,          // the max size of the value in bytes
-    wal_file: RecordFile<K,V>,         // write-ahead log for in-memory items
-    mem_tree: MultiMap<K,V>,        // in-memory multi-map that gets merged with the on-disk BTree
-    tree_file: OnDiskBTree<K,V>,    // the file backing the whole thing
+    tree_file_path: String,       // the path to the tree file
+    key_size: usize,              // the size of the key in bytes
+    value_size: usize,            // the size of the value in bytes
+    wal_file: RecordFile<K,V>,    // write-ahead log for in-memory items
+    mem_tree: MultiMap<K,V>,      // in-memory multi-map that gets merged with the on-disk BTree
+    tree_file: OnDiskBTree<K,V>,  // the file backing the whole thing
 }
 
 impl <K: KeyType, V: ValueType> BTree<K, V> {
-    pub fn new(tree_file_path: String, max_key_size: usize, max_value_size: usize) -> Result<BTree<K,V>, Box<Error>> {
+    pub fn new(tree_file_path: &String, key_size: usize, value_size: usize) -> Result<BTree<K,V>, Box<Error>> {
         // create our in-memory multi-map
         let mut mem_tree = MultiMap::<K,V>::new();
 
@@ -46,7 +46,7 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
         let wal_file_path = tree_file_path.to_owned() + ".wal";
 
         // construct our WAL file
-        let mut wal_file = try!(RecordFile::<K,V>::new(&wal_file_path, max_key_size, max_value_size));
+        let mut wal_file = try!(RecordFile::<K,V>::new(&wal_file_path, key_size, value_size));
 
         // if we have a WAL file, replay it into the mem_tree
         if try!(wal_file.is_new()) {
@@ -56,11 +56,11 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
         }
 
         // open the data file
-        let tree_file = try!(OnDiskBTree::<K,V>::new(tree_file_path.to_owned(), max_key_size, max_value_size));
+        let tree_file = try!(OnDiskBTree::<K,V>::new(tree_file_path.to_owned(), key_size, value_size));
 
-        return Ok(BTree{tree_file_path: tree_file_path,
-                        max_key_size: max_key_size,
-                        max_value_size: max_value_size,
+        return Ok(BTree{tree_file_path: tree_file_path.clone(),
+                        key_size: key_size,
+                        value_size: value_size,
                         tree_file: tree_file,
                         wal_file: wal_file,
                         mem_tree: mem_tree});
@@ -92,7 +92,7 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
     /// Merges the records on disk with the records in memory
     fn compact(&mut self) -> Result<(), Box<Error>>{
         // create a new on-disk BTree
-        let mut new_tree_file = try!(OnDiskBTree::<K,V>::new(self.tree_file_path.to_owned() + ".new", self.max_key_size, self.max_value_size));
+        let mut new_tree_file = try!(OnDiskBTree::<K,V>::new(self.tree_file_path.to_owned() + ".new", self.key_size, self.value_size));
 
         // get an iterator for the in-memory items
         let mem_iter = self.mem_tree.into_iter();
@@ -133,7 +133,7 @@ mod tests {
     fn new_blank_file() {
         let file_path = gen_temp_name();
 
-        BTree::<u8, u8>::new(file_path.to_owned(), 1, 1).unwrap();
+        let btree = BTree::<u8, u8>::new(&file_path, 1, 1).unwrap();
 
         // make sure our two files were created
         let btf = OpenOptions::new().read(true).write(false).create(false).open(&file_path).unwrap();
@@ -142,6 +142,13 @@ mod tests {
         let wal = OpenOptions::new().read(true).write(false).create(false).open(file_path.to_owned() + ".wal").unwrap();
         assert!(wal.metadata().unwrap().len() == 0);
 
+        // make sure they think they're new too
+        assert!(btree.wal_file.is_new().unwrap());
+        assert!(btree.wal_file.count().unwrap() == 0);
+
+        assert!(btree.tree_file.is_new().unwrap());
+        assert!(btree.tree_file.count().unwrap() == 0);
+
         remove_files(file_path); // remove files assuming it all went well
     }
 
@@ -149,15 +156,14 @@ mod tests {
     fn new_existing_file() {
         let file_path = gen_temp_name();
 
-        {
-            BTree::<u8, u8>::new(file_path.to_owned(), 1, 1).unwrap();
-        }
+        // scoped so it is cleaned up
+        { BTree::<u8, u8>::new(&file_path, 1, 1).unwrap(); }
 
-        let btree = BTree::<u8, u8>::new(file_path.to_owned(), 1, 1).unwrap();
+        let btree = BTree::<u8, u8>::new(&file_path, 1, 1).unwrap();
 
         // check our file lengths from the struct
-        assert!(btree.tree_file.len().unwrap() == 0);
-        assert!(btree.wal_file.len().unwrap() == 0);
+        assert!(btree.tree_file.count().unwrap() == 0);
+        assert!(btree.wal_file.count().unwrap() == 0);
 
         remove_files(file_path); // remove files assuming it all went well
     }
@@ -166,11 +172,11 @@ mod tests {
     fn insert_new_u8() {
         let file_path = gen_temp_name();
 
-        let mut btree = BTree::<u8, u8>::new(file_path.to_owned(), 1, 1).unwrap();
+        let mut btree = BTree::<u8, u8>::new(&file_path, 1, 1).unwrap();
 
         btree.insert(2, 3).unwrap(); // insert into a new file
 
-        assert!(btree.wal_file.len().unwrap() == 2);
+        assert!(btree.wal_file.count().unwrap() == 1);
         assert!(btree.mem_tree.contains_key(&2));
 
         remove_files(file_path); // remove files assuming it all went well
@@ -180,7 +186,7 @@ mod tests {
     fn insert_new_str() {
         let file_path = gen_temp_name();
 
-        let mut btree = BTree::<String, String>::new(file_path.to_owned(), 15, 15).unwrap();
+        let mut btree = BTree::<String, String>::new(&file_path, 15, 15).unwrap();
 
         // insert into a new file
         btree.insert("Hello".to_owned(), "World".to_owned()).unwrap();
@@ -196,7 +202,7 @@ mod tests {
         let file_path = gen_temp_name();
 
         // setup tree
-        let mut btree = BTree::<String, String>::new(file_path.to_owned(), 15, 15).unwrap();
+        let mut btree = BTree::<String, String>::new(&file_path, 15, 15).unwrap();
 
         // expected return set
         let mut expected: BTreeSet<String> = BTreeSet::new();
@@ -216,7 +222,7 @@ mod tests {
     fn insert_multiple() {
         let file_path = gen_temp_name();
 
-        let mut btree = BTree::<String, String>::new(file_path.to_owned(), 15, 15).unwrap();
+        let mut btree = BTree::<String, String>::new(&file_path, 15, 15).unwrap();
 
         // insert into a new file
         btree.insert("Hello".to_owned(), "World".to_owned()).unwrap();
