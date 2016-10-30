@@ -134,7 +134,7 @@ mod tests {
 
         // make sure our two files were created
         let btf = OpenOptions::new().read(true).write(false).create(false).open(&file_path).unwrap();
-        assert!(btf.metadata().unwrap().len() == 8);
+        assert!(btf.metadata().unwrap().len() == 0);
 
         let wal = OpenOptions::new().read(true).write(false).create(false).open(file_path.to_owned() + ".wal").unwrap();
         assert!(wal.metadata().unwrap().len() == 0);
@@ -153,7 +153,7 @@ mod tests {
         let btree = BTree::<u8, u8>::new(file_path.to_owned(), 1, 1).unwrap();
 
         // check our file lengths from the struct
-        assert!(btree.tree_file.len().unwrap() == 8);
+        assert!(btree.tree_file.len().unwrap() == 0);
         assert!(btree.wal_file.len().unwrap() == 0);
 
         remove_files(file_path); // remove files assuming it all went well
