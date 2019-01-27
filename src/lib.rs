@@ -49,7 +49,7 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
         let mut wal_file = try!(RecordFile::<K,V>::new(&wal_file_path, key_size, value_size));
 
         // if we have a WAL file, replay it into the mem_tree
-        if try!(wal_file.is_new()) {
+        if !try!(wal_file.is_new()) {
             for kv in &mut wal_file {
                 mem_tree.insert(kv.key, kv.value);
             }
@@ -204,14 +204,30 @@ mod tests {
         // setup tree
         let mut btree = BTree::<String, String>::new(&file_path, 15, 15).unwrap();
 
-        // expected return set
-        let mut expected: BTreeSet<String> = BTreeSet::new();
-        expected.insert("World".to_string());
-
         btree.insert("Hello".to_owned(), "World".to_owned());
 
         // get the set at the hello key
         let set_at_hello: Vec<String> = btree.get(&"Hello".to_string()).unwrap().cloned().collect();
+
+        assert_eq!(set_at_hello, ["World".to_string()]);
+
+        remove_files(file_path); // remove files assuming it all went well
+    }
+
+    #[test]
+    fn get_from_disk() {
+        let file_path = gen_temp_name();
+
+        // setup tree
+        let mut btree = BTree::<String, String>::new(&file_path, 15, 15).unwrap();
+        btree.insert("Hello".to_owned(), "World".to_owned());
+
+        // drop the btree and create a new one to ensure the `get` below happens from disk rather than cache
+        drop(btree);
+        let btree = BTree::<String, String>::new(&file_path, 15, 15).unwrap();
+
+        // get the set at the hello key
+        let set_at_hello: Vec<String> = btree.get(&"Hello".to_string()).expect("should read data").cloned().collect();
 
         assert_eq!(set_at_hello, ["World".to_string()]);
 
