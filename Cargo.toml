@@ -4,7 +4,7 @@ version = "0.1.0"
 authors = ["William Speirs <bill.speirs@gmail.com>"]
 
 [dependencies]
-rand = "*"
+rand = "0.5.0"
 bincode = "0.6.0"
 rustc-serialize = "0.3.19"
 itertools = "0.5.5"
