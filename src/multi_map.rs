@@ -25,16 +25,19 @@ impl <'a, K: KeyType, V: ValueType> MultiMap<K,V> {
     }
 
     pub fn insert(&mut self, key: K, value: V) -> usize {
-        self.count += 1;
 
         if let Some(set) = self.multi_map.get_mut(&key) {
-            set.insert(value);
+            if set.insert(value) {
+                self.count +=1;
+            }
             return self.count;
         }
-        
+
         let mut set = BTreeSet::<V>::new();
 
         set.insert(value);
+
+        self.count += 1;
 
         self.multi_map.insert(key, set);
 
@@ -66,7 +69,7 @@ impl <'a, K: KeyType, V: ValueType> MultiMap<K,V> {
         if let Occupied(mut entry) = self.multi_map.entry(key) {
 
             if entry.get_mut().remove(&value) {
-                self.count -= 1;            
+                self.count -= 1;
             }
 
             if entry.get().is_empty() {
@@ -153,11 +156,11 @@ mod tests {
         let e1 = it.next().unwrap();
         assert!(12 == e1.key);
         assert!(String::from("abc") == e1.value);
-        
+
         let e2 = it.next().unwrap();
         assert!(23 == e2.key);
         assert!(String::from("abc") == e2.value);
-        
+
         let e3 = it.next().unwrap();
         assert!(23 == e3.key);
         assert!(String::from("def") == e3.value);
@@ -166,7 +169,7 @@ mod tests {
     #[test]
     fn test_get() {
         let mut mmap = MultiMap::<i32,String>::new();
-        
+
         assert!(mmap.insert(12, String::from("abc")) == 1);
         assert!(mmap.insert(23, String::from("abc")) == 2);
         assert!(mmap.insert(23, String::from("def")) == 3);
@@ -204,6 +207,12 @@ mod tests {
 
         assert!(it.next() == None);
     }
+    #[test]
+    fn test_size() {
+        let mut mmap = MultiMap::<i32, String>::new();
+        mmap.insert(1, "abc".into());
+        mmap.insert(1, "abc".into());
+        mmap.delete(1, "abc".into());
+        assert_eq!( mmap.size(),0)
+    }
 }
-
-

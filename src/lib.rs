@@ -46,10 +46,10 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
         let wal_file_path = tree_file_path.to_owned() + ".wal";
 
         // construct our WAL file
-        let mut wal_file = try!(RecordFile::<K,V>::new(&wal_file_path, key_size, value_size));
+        let mut wal_file = RecordFile::<K,V>::new(&wal_file_path, key_size, value_size)?;
 
         // if we have a WAL file, replay it into the mem_tree
-        if try!(wal_file.is_new()) {
+        if wal_file.is_new()? {
             for kv in &mut wal_file {
                 mem_tree.insert(kv.key, kv.value);
             }
@@ -71,14 +71,14 @@ impl <K: KeyType, V: ValueType> BTree<K, V> {
         let record = KeyValuePair{key: key, value: value};
 
         // should wrap this in a read-write lock
-        try!(self.wal_file.insert_record(&record));
+        self.wal_file.insert_record(&record)?;
 
         let KeyValuePair{key, value} = record;
 
         let size = self.mem_tree.insert(key, value);
 
         if size > MAX_MEMORY_ITEMS {
-            try!(self.compact());
+            self.compact()?;
         }
 
         return Ok( () );
@@ -117,9 +117,10 @@ mod tests {
     use ::BTree;
     use rand::{thread_rng, Rng};
     use std::collections::BTreeSet;
+    use rand::distributions::Alphanumeric;
 
     pub fn gen_temp_name() -> String {
-        let file_name: String = thread_rng().gen_ascii_chars().take(10).collect();
+        let file_name: String = thread_rng().sample_iter(&Alphanumeric).take(10).collect();
 
         return String::from("/tmp/") + &file_name + &String::from(".btr");
     }
